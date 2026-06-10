@@ -1,0 +1,1463 @@
+<!doctype html>
+<!-- DAIS 2026 · SPARK-55278 · jun-10 · 18-slide deck (+1 backup) · auto-exported to deck-jun-10.pdf -->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Language-agnostic UDF Protocol for Spark · DAIS 2026 · jun-10</title>
+<style>
+  /* ============================================================
+     Reset / typography
+     ============================================================ */
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    height: 100%; width: 100%;
+    background: #0b1620;
+    color: #f4f6f8;
+    font-family: "Inter", "SF Pro Display", -apple-system, BlinkMacSystemFont,
+                 "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+  code, pre, .mono {
+    font-family: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  }
+
+  /* ============================================================
+     Deck layout: each slide is a 16:9 canvas, centered, scaled
+     to viewport. Uses CSS transform for crisp rendering.
+     ============================================================ */
+  :root {
+    --slide-w: 1600px;
+    --slide-h: 900px;
+    --c-bg: #0b1620;
+    --c-bg-2: #11212e;
+    --c-card: #15293a;
+    --c-line: #22384c;
+    --c-text: #f4f6f8;
+    --c-muted: #9eb3c4;
+    --c-dim: #8ba1b5;
+    --c-accent: #ff3621;        /* Databricks Lava */
+    --c-accent-2: #ff7461;
+    --c-accent-soft: rgba(255,54,33,0.12);
+    --c-good: #4ad295;
+    --c-info: #4ea1ff;
+    --c-warn: #ffbd4a;
+  }
+
+  #stage {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #stage::before {
+    content: "";
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(900px 600px at 12% 10%, rgba(255,54,33,0.10), transparent 60%),
+      radial-gradient(900px 600px at 88% 92%, rgba(78,161,255,0.08), transparent 60%);
+    pointer-events: none;
+  }
+
+  .deck {
+    position: relative;
+    width: var(--slide-w);
+    height: var(--slide-h);
+    transform-origin: center center;
+  }
+  .slide {
+    position: absolute; inset: 0;
+    padding: 56px 96px 84px;
+    display: none;
+    flex-direction: column;
+    justify-content: center;   /* fill the canvas — center content vertically */
+    background: linear-gradient(180deg, #0b1620 0%, #0d1a26 100%);
+    border: 1px solid var(--c-line);
+    border-radius: 18px;
+    overflow: hidden;
+  }
+  .slide.active { display: flex; }
+
+  /* Slide chrome */
+  .slide-header {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 24px;
+  }
+  .eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    font-size: 14px;
+    color: var(--c-accent);
+    font-weight: 600;
+  }
+  .tag {
+    font-size: 13px;
+    color: var(--c-dim);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  h1.title {
+    font-size: 64px;
+    line-height: 1.05;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin: 0 0 12px;
+  }
+  h2.title {
+    font-size: 52px;
+    line-height: 1.08;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    margin: 0 0 16px;
+  }
+  h3.subtitle {
+    font-size: 26px;
+    line-height: 1.3;
+    color: var(--c-muted);
+    font-weight: 400;
+    margin: 0 0 28px;
+    max-width: 1100px;
+  }
+  p, li { font-size: 22px; line-height: 1.45; color: var(--c-text); }
+  ul { padding-left: 24px; margin: 8px 0; }
+  li { margin: 8px 0; }
+  li::marker { color: var(--c-accent); }
+  .muted { color: var(--c-muted); }
+  .dim { color: var(--c-dim); }
+  .accent { color: var(--c-accent); }
+  .good { color: var(--c-good); }
+  .warn { color: var(--c-warn); }
+
+  /* Footer bar */
+  .slide-footer {
+    position: absolute; left: 96px; right: 96px; bottom: 28px;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 13px; color: var(--c-dim);
+    letter-spacing: 0.06em;
+  }
+  .progress {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    height: 3px; background: var(--c-line);
+  }
+  .progress > i {
+    display: block; height: 100%; background: var(--c-accent);
+    transition: width 240ms ease;
+  }
+
+  /* ============================================================
+     Reusable components
+     ============================================================ */
+  .grid { display: grid; gap: 24px; }
+  .grid.cols-2 { grid-template-columns: 1fr 1fr; }
+  .grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .grid.cols-1-2 { grid-template-columns: 1fr 1.5fr; }
+  .grid.cols-2-3 { grid-template-columns: 2fr 3fr; }
+
+  .card {
+    background: var(--c-card);
+    border: 1px solid var(--c-line);
+    border-radius: 14px;
+    padding: 24px 26px;
+  }
+  .card h4 {
+    margin: 0 0 10px;
+    font-size: 20px;
+    color: var(--c-text);
+    letter-spacing: -0.01em;
+  }
+  .card.accent { border-color: rgba(255,54,33,0.4); background: linear-gradient(180deg, var(--c-card) 0%, #1a1c22 100%); }
+
+  .chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 4px 12px; border-radius: 999px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--c-line);
+    font-size: 14px; color: var(--c-muted);
+  }
+  .chip.accent { background: var(--c-accent-soft); border-color: rgba(255,54,33,0.4); color: var(--c-accent-2); }
+  .chip.good { background: rgba(74,210,149,0.10); border-color: rgba(74,210,149,0.4); color: var(--c-good); }
+  .chip.info { background: rgba(78,161,255,0.10); border-color: rgba(78,161,255,0.4); color: var(--c-info); }
+  .chip.warn { background: rgba(255,189,74,0.10); border-color: rgba(255,189,74,0.4); color: var(--c-warn); }
+
+  .kbd {
+    display: inline-block; padding: 1px 6px;
+    border-radius: 5px; background: #1e2c3a;
+    border: 1px solid var(--c-line); font-size: 12px;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    color: var(--c-muted);
+  }
+
+  pre.code {
+    background: #0c1a25;
+    border: 1px solid var(--c-line);
+    border-radius: 12px;
+    padding: 18px 22px;
+    overflow: hidden;
+    font-size: 17px;
+    line-height: 1.55;
+    color: #e3edf5;
+    white-space: pre;
+  }
+  pre.code .k { color: #ff7461; }
+  pre.code .t { color: #4ea1ff; }
+  pre.code .s { color: #4ad295; }
+  pre.code .c { color: #6c8298; font-style: italic; }
+  pre.code .n { color: #ffbd4a; }
+
+  .pill {
+    display: inline-block;
+    padding: 6px 12px; border-radius: 8px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--c-line);
+    color: var(--c-muted);
+    font-size: 16px; margin-right: 6px;
+  }
+
+  /* Big stat */
+  .stat {
+    font-size: 90px; font-weight: 700; line-height: 1; letter-spacing: -0.03em;
+    color: var(--c-accent);
+  }
+
+  /* Diagrams */
+  .diagram {
+    display: flex; gap: 16px; align-items: stretch; justify-content: center;
+    margin-top: 8px;
+  }
+  .box {
+    flex: 1; min-width: 0;
+    background: var(--c-card);
+    border: 1px solid var(--c-line);
+    border-radius: 12px;
+    padding: 18px 20px;
+    text-align: center;
+    font-size: 18px; color: var(--c-text);
+  }
+  .box.spark { border-color: rgba(78,161,255,0.5); background: rgba(78,161,255,0.06); }
+  .box.worker { border-color: rgba(255,54,33,0.5); background: rgba(255,54,33,0.06); }
+  .box.spec { border-color: rgba(255,189,74,0.5); background: rgba(255,189,74,0.06); }
+  .arrow { align-self: center; color: var(--c-muted); font-size: 24px; }
+  .lane-label {
+    font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--c-dim); margin-bottom: 8px;
+  }
+
+  /* Lifecycle figure — three phases, each one a horizontal stripe with the
+     phase label spanning all of its content rows on both sides. */
+  /* Pillar 2 · lifecycle — Spark <-> Worker protocol diagram */
+  .lifecycle { background: var(--c-card); border: 1px solid var(--c-line);
+    border-radius: 12px; overflow: hidden; }
+  .lifecycle .lc-head { display: flex; justify-content: space-between; align-items: center;
+    padding: 11px 24px; font-weight: 700; font-size: 15px; letter-spacing: .03em;
+    color: var(--c-text); background: rgba(255,255,255,0.04); border-bottom: 1px solid var(--c-line); }
+  .lifecycle .lc-head .w { color: var(--c-info); }
+  .lifecycle .lc-phase { padding: 13px 24px 15px; border-bottom: 1px solid var(--c-line); }
+  .lifecycle .lc-phase:last-child { border-bottom: 0; }
+  .lifecycle .lc-tag { font-size: 12px; font-weight: 700; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--c-accent-2); margin: 0 0 12px; }
+  .lifecycle .lc-tag em { font-style: normal; text-transform: none; letter-spacing: .01em;
+    font-weight: 400; color: var(--c-dim); }
+  .lifecycle .lc-msg { position: relative; height: 26px; display: flex; align-items: center; }
+  .lifecycle .lc-msg + .lc-msg { margin-top: 10px; }
+  .lifecycle .lc-msg::before { content: ''; position: absolute; left: 4px; right: 4px; top: 50%;
+    border-top: 2px solid var(--arrow, var(--c-accent)); opacity: .55; }
+  .lifecycle .lc-msg::after { content: ''; position: absolute; top: 50%;
+    width: 0; height: 0; border: 6px solid transparent; }
+  .lifecycle .lc-msg.to-right { --arrow: var(--c-accent); }
+  .lifecycle .lc-msg.to-right::after { right: -1px; transform: translateY(-50%);
+    border-left-color: var(--c-accent); border-right-width: 0; }
+  .lifecycle .lc-msg.to-left { --arrow: var(--c-info); }
+  .lifecycle .lc-msg.to-left::after { left: -1px; transform: translateY(-50%);
+    border-right-color: var(--c-info); border-left-width: 0; }
+  .lifecycle .lc-text { position: relative; z-index: 1; margin: 0 auto; background: var(--c-card);
+    padding: 2px 14px; font-family: ui-monospace, monospace; font-size: 14px; color: var(--c-muted); }
+  .lifecycle .lc-note { text-align: center; font-size: 12.5px; color: var(--c-dim);
+    font-family: ui-monospace, monospace; margin-top: 10px; }
+
+  /* Title slide */
+  .slide.title-slide {
+    background:
+      radial-gradient(900px 700px at 10% 0%, rgba(255,54,33,0.18), transparent 60%),
+      radial-gradient(700px 600px at 100% 100%, rgba(78,161,255,0.12), transparent 60%),
+      linear-gradient(180deg, #0b1620 0%, #0d1a26 100%);
+    justify-content: center;
+  }
+  .slide.title-slide .eyebrow { font-size: 16px; }
+  .slide.title-slide h1.title { font-size: 96px; max-width: 1300px; }
+  .slide.title-slide h3.subtitle { font-size: 30px; max-width: 1100px; }
+  .author {
+    margin-top: 32px;
+    display: flex; align-items: center; gap: 16px;
+    color: var(--c-muted); font-size: 20px;
+  }
+  .author .dot { width: 6px; height: 6px; border-radius: 999px; background: var(--c-accent); }
+
+  /* Closing slide */
+  .slide.closing-slide {
+    background:
+      radial-gradient(900px 700px at 90% 100%, rgba(255,54,33,0.18), transparent 60%),
+      linear-gradient(180deg, #0b1620 0%, #0d1a26 100%);
+    justify-content: center; align-items: flex-start;
+  }
+  .slide.closing-slide h2.title { font-size: 96px; }
+
+  /* Side architecture diagram */
+  .arch {
+    display: grid;
+    grid-template-columns: 1.1fr 0.1fr 1fr;
+    gap: 12px; align-items: stretch;
+  }
+  .arch .col { display: flex; flex-direction: column; gap: 12px; }
+  .arch .pipe {
+    align-self: stretch;
+    background:
+      repeating-linear-gradient(180deg,
+        var(--c-accent) 0 8px,
+        transparent 8px 16px);
+    width: 4px; margin: 24px auto; opacity: 0.4;
+  }
+
+  /* Three-pillar visual */
+  .pillars {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 18px;
+  }
+  .pillar {
+    background: var(--c-card);
+    border: 1px solid var(--c-line);
+    border-radius: 14px;
+    padding: 26px;
+    position: relative;
+    overflow: hidden;
+  }
+  .pillar .num {
+    position: absolute; right: 18px; top: 10px;
+    font-size: 84px; font-weight: 800; color: rgba(255,54,33,0.10);
+    line-height: 1; letter-spacing: -0.03em;
+  }
+  .pillar h4 { font-size: 24px; margin: 12px 0 10px; }
+  .pillar p { font-size: 18px; color: var(--c-muted); margin: 0; }
+  .pillar .badge {
+    font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--c-accent); font-weight: 700;
+  }
+
+  /* PySpark today figure */
+  .pyspark-fig {
+    display: grid;
+    grid-template-columns: 1fr 60px 1fr;
+    gap: 12px; align-items: center;
+  }
+  .pyspark-fig .conn {
+    text-align: center; color: var(--c-dim); font-size: 14px;
+    letter-spacing: 0.16em; text-transform: uppercase;
+  }
+
+  /* Help / hotkeys overlay */
+  #help {
+    display: none;
+    position: fixed; right: 24px; bottom: 24px;
+    background: rgba(15,30,42,0.95);
+    border: 1px solid var(--c-line);
+    border-radius: 12px;
+    padding: 14px 16px; font-size: 13px;
+    color: var(--c-muted);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+    z-index: 50;
+  }
+  #help.show { display: block; }
+  #help b { color: var(--c-text); }
+
+  /* Notes panel */
+  #notes {
+    display: none;
+    position: fixed; left: 24px; bottom: 24px;
+    width: 620px; max-height: 60vh; overflow: auto;
+    background: rgba(15,30,42,0.96);
+    border: 1px solid var(--c-line);
+    border-radius: 12px;
+    padding: 16px 20px;
+    font-size: 14.5px; line-height: 1.55;
+    color: var(--c-muted);
+    z-index: 50;
+    white-space: pre-wrap;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.45);
+  }
+  #notes.show { display: block; }
+  #notes b { color: var(--c-text); }
+  #notes .cue {
+    color: var(--c-accent-2);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+
+  /* Code with comments and highlighted lines */
+  .protobox {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+  }
+
+  /* Worker-spec local model */
+  .stack {
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .stack .row {
+    background: var(--c-card);
+    border: 1px solid var(--c-line);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 16px;
+    color: var(--c-muted);
+  }
+  .stack .row b { color: var(--c-text); }
+  .stack .row.lava { border-color: rgba(255,54,33,0.4); background: rgba(255,54,33,0.06); color: var(--c-accent-2); }
+  .stack .row.info { border-color: rgba(78,161,255,0.4); background: rgba(78,161,255,0.06); color: #b7d6ff; }
+
+  /* responsive (scaled by JS) */
+
+  /* ============================================================
+     Print / PDF export — show every slide, one per landscape page.
+     The deck normally hides inactive slides and CSS-scales the active
+     one; for print we render at native 1600x900 and let Chrome paginate.
+     ============================================================ */
+  @media print {
+    @page {
+      size: 1600px 900px;
+      margin: 0;
+    }
+    html, body {
+      width: 1600px;
+      height: auto;
+      background: #0b1620;
+      overflow: visible;
+    }
+    #stage {
+      position: static;
+      display: block;
+      width: 1600px;
+      height: auto;
+    }
+    #stage::before { display: none; }
+    .deck {
+      width: 1600px;
+      height: auto;
+      transform: none !important;
+    }
+    .slide {
+      position: relative;
+      display: flex !important;
+      width: 1600px;
+      height: 900px;
+      page-break-after: always;
+      break-after: page;
+      border-radius: 0;
+      border: 0;
+    }
+    .slide:last-child {
+      page-break-after: auto;
+      break-after: auto;
+    }
+    /* hide on-screen UI chrome */
+    #help, #notes { display: none !important; }
+    /* progress bar shows full extent on every printed slide */
+    .slide .progress > i { width: 100% !important; }
+    /* entrance animation must never hide content in the PDF */
+    .anim, .anim.in { opacity: 1 !important; transform: none !important; transition: none !important; }
+  }
+
+  /* ---- content entrance animation (v2-style staggered rise-in) ---- */
+  .anim { opacity: 0; transform: translateY(20px); will-change: opacity, transform; }
+  .slide.active .anim.in {
+    opacity: 1; transform: none;
+    transition: opacity .5s cubic-bezier(.22,.7,.2,1), transform .5s cubic-bezier(.22,.7,.2,1);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .anim, .anim.in { opacity: 1 !important; transform: none !important; transition: none !important; }
+  }
+
+  /* ---------- Presenter view (separate window) ---------- */
+  #presenter-root { position: fixed; inset: 0; z-index: 9999; display: none;
+    flex-direction: column; background: #0a141a; color: var(--c-text);
+    font-family: Arial, Helvetica, sans-serif; }
+  body.presenter #stage, body.presenter #notes, body.presenter #help { display: none !important; }
+  body.presenter #presenter-root { display: flex; }
+  body.presenter { overflow: hidden; }
+  .pv-top { display: flex; align-items: center; gap: 22px; padding: 12px 26px;
+    border-bottom: 1px solid var(--c-line); flex: 0 0 auto; }
+  .pv-timer { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+  .pv-clock { font-size: 16px; color: var(--c-muted); font-variant-numeric: tabular-nums; }
+  .pv-btn { font: inherit; font-size: 13px; color: var(--c-text); cursor: pointer;
+    background: rgba(255,255,255,0.06); border: 1px solid var(--c-line);
+    border-radius: 7px; padding: 6px 12px; }
+  .pv-btn:hover { background: rgba(255,255,255,0.12); }
+  .pv-count { margin-left: auto; font-size: 20px; color: var(--c-muted); font-variant-numeric: tabular-nums; }
+  .pv-body { flex: 1 1 auto; display: flex; gap: 22px; padding: 20px 26px; min-height: 0; }
+  /* wide left column: the current slide is the hero */
+  .pv-left { flex: 1.7 1 0; min-width: 0;
+    display: flex; flex-direction: column; justify-content: center; gap: 8px; min-height: 0; }
+  /* right column: small next preview + a compact notes panel */
+  .pv-right { flex: 1 1 0; min-width: 320px;
+    display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+  .pv-label { font-size: 12px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--c-muted); flex: 0 0 auto; margin-top: 4px; }
+  .pv-stage { position: relative; width: 100%; background: #000;
+    border: 1px solid var(--c-line); border-radius: 10px; overflow: hidden; flex: 0 0 auto; }
+  .pv-stage::before { content: ''; display: block; padding-top: 56.25%; }
+  .pv-scaler { position: absolute; top: 0; left: 0; width: 1600px; height: 900px; transform-origin: top left; }
+  .pv-scaler .slide { position: absolute; inset: 0; }
+  .pv-notes { flex: 1 1 auto; overflow-y: auto; white-space: pre-wrap;
+    font-size: 18px; line-height: 1.45; color: var(--c-text);
+    background: rgba(15,30,42,0.7); border: 1px solid var(--c-line);
+    border-radius: 12px; padding: 16px 24px; }
+  .pv-notes .cue { color: var(--c-accent); }
+  .pv-hint { color: var(--c-muted); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <div class="deck" id="deck">
+
+    <!-- ============================================================
+         1. TITLE
+         ============================================================ -->
+    <section class="slide title-slide active" data-notes="Good afternoon, everyone, and thank you for being here. My name is Haiyang. I'm an engineer at Databricks, and I'm here with my colleague, Tian Gao.
+
+Today, the two of us would like to share a proposal we're bringing to the Apache Spark open-source community — about how Spark runs user-defined functions across many different languages. Before I get into the proposal, let me be clear about what I mean when I say the word &quot;UDF&quot;.">
+      <div class="eyebrow">SPIP · SPARK-55278 · DAIS 2026</div>
+      <h1 class="title">A Language‑agnostic UDF Protocol<br/>for Apache Spark</h1>
+      <h3 class="subtitle">One execution model for user&#8209;defined functions &mdash; <span style="color:var(--c-accent);">across languages, runtimes, and environments</span>.</h3>
+      <div class="author">
+        <span class="dot"></span>
+        <span><b style="color:var(--c-text);">Haiyang Sun</b> &nbsp;<span class="dim">&middot;</span>&nbsp; Databricks &nbsp;<span class="dim">&middot;</span>&nbsp; haiyang.sun@databricks.com</span>
+      </div>
+      <div class="author" style="margin-top:6px;">
+        <span class="dot"></span>
+        <span><b style="color:var(--c-text);">Tian Gao</b> &nbsp;<span class="dim">&middot;</span>&nbsp; Databricks &nbsp;<span class="dim">&middot;</span>&nbsp; tian.gao@databricks.com</span>
+      </div>
+      <div class="author" style="margin-top:14px;color:var(--c-accent);font-size:18px;">June 16, 2026</div>
+      <div class="slide-footer"><span>SPIP design direction &middot; open-source Apache Spark perspective</span><span>DAIS 2026</span></div>
+      <div class="progress"><i></i></div>
+    </section>
+
+<section class="slide" data-notes="When I say UDF, I don't only mean a simple function that you register with the udf keyword and then call by name in SQL. I mean any custom code you write that runs inside a Spark query. That covers a broad family — scalar functions, batched and per-partition functions, grouped and aggregate functions, table functions, and even some of the streaming APIs.
+
+UDFs matter because Spark's built-in functions can't cover everything. A UDF is how you call an external library, or run logic that's specific to your own business. They show up across a lot of real pipelines — ETL, machine learning, streaming — so for many teams they're an important part of how they use Spark. To finish setting up the problem, I need to introduce one more thing: Spark Connect.">
+      <div class="slide-header">
+        <div class="eyebrow">Setting the stage</div>
+        <div class="tag">1 of 3</div>
+      </div>
+      <h2 class="title">What we mean by &ldquo;UDF&rdquo;</h2>
+      <h3 class="subtitle">Any user‑defined code that runs as part of a Spark query.</h3>
+
+      <div class="grid cols-2">
+        <div class="card">
+          <h4>The broad family</h4>
+          <ul>
+            <li><b>Scalar</b> &mdash; one row in, one row out (the <span class="mono accent">udf</span> keyword)</li>
+            <li><b>Batched / per-partition</b> &mdash; <span class="mono accent">mapInPandas</span>, <span class="mono accent">mapPartitions</span></li>
+            <li><b>Grouped &amp; aggregate</b> &mdash; group map, <span class="mono accent">UDAF</span></li>
+            <li><b>Table functions</b> (<span class="mono accent">UDTF</span>) &mdash; one row in, many out</li>
+            <li><b>Streaming</b> &mdash; <span class="mono accent">foreachBatch</span>, <span class="mono accent">transformWithState</span></li>
+          </ul>
+        </div>
+        <div class="card accent">
+          <h4>Why it matters</h4>
+          <ul>
+            <li>Built-ins can&rsquo;t cover every domain</li>
+            <li>Calls into external libraries (ML, scientific)</li>
+            <li>Complex / domain logic that doesn&rsquo;t map to operators</li>
+            <li>Unstructured &amp; semi-structured data Spark doesn&rsquo;t natively understand</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="slide-footer"><span>What we mean by UDF</span><span>2 / 18</span></div>
+      <div class="progress"><i></i></div>
+    </section>
+
+<section class="slide" data-notes="Here's why Spark Connect matters for this talk: it opened Spark up to many more languages — but the one thing it still can't give them is UDFs. Let me explain briefly what it is, so that gap makes sense.
+
+Spark Connect, introduced in Spark 3.4, splits Spark into two parts: a client and a server. Your application becomes a thin client that talks to the server, sending it logical plans. Two things matter. First, it's forward-compatible: you can upgrade the server without upgrading every client. And second, it's universal — because the client is thin and the protocol is language-neutral, many languages can now reach Spark: Go, Rust, Swift, .NET, and others. They can do DataFrames and SQL. But UDFs are the one promise Spark Connect still can't keep for them — and that's where our story begins.">
+      <div class="slide-header">
+        <div class="eyebrow">Setting the stage</div>
+        <div class="tag">2 of 3</div>
+      </div>
+      <h2 class="title">Spark Connect, briefly</h2>
+      <h3 class="subtitle">A client–server architecture. Logical plans on the wire. Forward‑compatible protocol.</h3>
+
+      <div class="grid cols-2">
+        <div>
+          <div class="diagram">
+            <div class="box spark"><b>Client</b><br/><span class="dim mono">your app · any language</span></div>
+            <div class="arrow">→ gRPC · Protobuf →</div>
+            <div class="box worker"><b>Spark server</b><br/><span class="dim mono">planner · executor</span></div>
+          </div>
+          <p class="muted" style="margin-top:24px;">Forward compatibility: upgrade the server, leave clients untouched.<br/>That keeps Spark applications <span class="accent">stable and maintainable over time</span>.</p>
+          <p class="dim" style="margin-top:10px;font-size:15px;">Logical plan: what your query does, before Spark runs it. &nbsp;&middot;&nbsp; gRPC + Protobuf: a standard, versioned way for programs to exchange messages.</p>
+        </div>
+
+        <div class="card">
+          <h4>Languages already reach Spark Connect</h4>
+          <p class="muted" style="margin:0 0 12px;">Beyond Scala / Python / R:</p>
+          <div>
+            <span class="pill">Go <span class="dim">· Apache</span></span>
+            <span class="pill">Rust <span class="dim">· Apache</span></span>
+            <span class="pill">Swift <span class="dim">· Apache</span></span>
+            <span class="pill">TypeScript</span>
+            <span class="pill">.NET</span>
+            <span class="pill">&hellip;</span>
+          </div>
+          <p class="dim" style="margin-top:16px;font-size:18px;">UDFs are the one promise <b class="accent">Spark Connect still can&rsquo;t keep</b> for most of them.</p>
+        </div>
+      </div>
+
+      <div class="slide-footer"><span>Spark Connect</span><span>3 / 18</span></div>
+      <div class="progress"><i></i></div>
+    </section>
+
+<section class="slide" data-notes="And that is the first problem. Right now, if you build a client on top of Spark Connect, there's no easy way to add UDF support for a new language. What you're looking at here is the README from the Apache Spark Connect client for Rust. DataFrames work. SQL works. But next to UDF and UDTF, it simply says: not possible.
+
+This is not a Rust problem. It's structural. There's no language-neutral protocol for running a UDF, and Spark's planning logic for UDFs is wired specifically around Python. So every new language would have to rebuild that entire stack from scratch. Most of them don't — they just ship without UDF support.">
+      <div class="slide-header">
+        <div class="eyebrow">Problem 1</div>
+        <div class="tag">Multi-language</div>
+      </div>
+      <h2 class="title">Languages are stuck without UDFs</h2>
+      <h3 class="subtitle">Existing PySpark / Scala UDF machinery can&rsquo;t be reused for new Spark Connect clients.</h3>
+
+      <div class="grid cols-2">
+        <div class="card">
+          <h4>From the Apache Rust Spark Connect README</h4>
+          <pre class="code mono">
+<span class="c">// supported:</span>
+<span class="s">DataFrame · SQL · Reads/Writes · Group-by ✓</span>
+
+<span class="c">// blocked:</span>
+<span class="k">UDF</span>  &nbsp; &nbsp; &nbsp;<span class="n">not possible</span>
+<span class="k">UDTF</span> &nbsp; &nbsp; <span class="n">not possible</span>
+          </pre>
+        </div>
+        <div>
+          <p>It&rsquo;s not a Rust problem. It&rsquo;s an <b class="accent">architectural gap</b>:</p>
+          <ul>
+            <li>No standard <b>protocol</b> for sending a UDF to a worker and streaming data</li>
+            <li>No language-neutral <b>worker contract</b> Spark can talk to</li>
+            <li>Planning logic <b>hard-wired to Python</b></li>
+          </ul>
+          <p class="muted" style="margin-top:18px;">Every new language ends up having to re-invent the entire UDF stack &mdash; or just skip it.</p>
+        </div>
+      </div>
+
+      <div class="slide-footer"><span>Problem 1 · multi-language</span><span>4 / 18</span></div>
+      <div class="progress"><i></i></div>
+    </section>
+
+<section class="slide" data-notes="Here is the second problem. One of the benefits of Spark Connect is forward compatibility: an older client keeps working against a newer, evolving server, because the client only sends logical plans, in a forward-compatible way. But a UDF is different. A UDF doesn't just carry a logical plan; it carries its whole environment with it — the language runtime, the versions of the libraries it depends on, and the serialized function body itself, which assumes a specific runtime.
+
+So picture this: an older client defines a UDF, and it ends up running on a newer server whose bundled runtime has moved on. The logical plan still lines up — but the UDF's runtime doesn't, and the function can break. So for UDFs, the forward-compatibility promise quietly breaks. Hold on to this one — we'll come back to exactly how we address it.">
+      <div class="slide-header">
+        <div class="eyebrow">Problem 2</div>
+        <div class="tag">Forward compatibility</div>
+      </div>
+      <h2 class="title">UDFs don&rsquo;t fit cleanly in a client–server world</h2>
+
+      <div class="grid cols-2">
+        <div class="card">
+          <h4>Spark Connect works well for</h4>
+          <ul>
+            <li>Logical plans</li>
+            <li>Stable, version‑free semantics</li>
+            <li>Old clients running on newer servers</li>
+          </ul>
+        </div>
+        <div class="card accent">
+          <h4>UDFs carry an environment</h4>
+          <ul>
+            <li>Language runtime &mdash; Java 17, Scala 2.13, Python 3.12&hellip;</li>
+            <li>Dependencies &amp; versions</li>
+            <li>Serialized (pickled) function bodies &mdash; tied to a runtime version</li>
+          </ul>
+          <p class="dim" style="margin:14px 0 0;font-size:15px;">Pickling = turning your function into bytes to ship it. Server upgrades → old UDFs may quietly break.</p>
+        </div>
+      </div>
+
+      <div style="margin-top:22px;" class="card">
+        <h4>Concrete example</h4>
+        <p class="muted" style="margin:0;">An <b>older client</b> defines a UDF &mdash; its serialized body assumes specific Python &amp; library versions. Run it on a <b>newer server</b> whose bundled runtime has moved on, and the function can break.<br/>The logical plan stayed compatible &mdash; the UDF&rsquo;s <b class="accent">runtime</b> didn&rsquo;t.</p>
+      </div>
+
+      <div class="slide-footer"><span>Problem 2 · forward compatibility</span><span>5 / 18</span></div>
+      <div class="progress"><i></i></div>
+    </section>
+
+<section class="slide" data-notes="And here is the third problem — this one has been around since long before Spark Connect. Today, UDF execution is tied to the executor's resources — and even when the code runs in a separate worker process next to the executor, that worker still shares the same node, the same scheduling model, and the same cluster hardware. If you've run UDFs at scale, you've almost certainly seen one run out of memory and take the whole job down with it.
+
+When the UDF is small, sharing those resources is fine. But the moment you need to load a large model, or you need a GPU the cluster doesn't have, you're stuck — and bumping the whole cluster up to a bigger machine, just for one UDF in one query, often isn't cost-effective. These are all resource constraints baked into the way UDFs execute in Spark today.">
+      <div class="slide-header">
+        <div class="eyebrow">Problem 3</div>
+        <div class="tag">Resources</div>
+      </div>
+      <h2 class="title">UDFs are caged inside the Spark cluster</h2>
+
+      <div class="grid cols-2">
+        <div>
+          <p class="muted" style="margin-top:0;">UDF execution is tied to executor-local resources today. Even when the user code runs in a <b>side worker process</b>, it shares the executor&rsquo;s node, scheduling model, and cluster hardware.</p>
+          <ul>
+            <li>Lightweight UDFs &mdash; fine</li>
+            <li>Heavy UDFs &mdash; OOMs, contention, evictions</li>
+            <li>Mismatched hardware &mdash; need a GPU the cluster doesn&rsquo;t have</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>What that forces today</h4>
+          <ul>
+            <li>Over-size the whole cluster for one heavy UDF</li>
+            <li>Or pull the data out and run the model elsewhere by hand</li>
+            <li>Or skip it &mdash; the workload just can&rsquo;t run in Spark</li>
+          </ul>
+          <p class="dim" style="margin-top:8px;font-size:16px;">The resource model is a <b>constraint</b>, not a choice.</p>
+        </div>
+      </div>
+
+      <div class="slide-footer"><span>Problem 3 · resources</span><span>6 / 18</span></div>
+      <div class="progress"><i></i></div>
+    </section>
+
+<section class="slide" data-notes="Now, before I get to the proposal, I want to give real credit to how well PySpark already supports UDFs today. It's powerful, it's efficient, and it has been carefully tuned in production over many years. In fact, PySpark already solves a great deal of what I've just described. For a Python UDF, Spark starts a separate Python worker process next to each executor — so your code doesn't run inside Spark itself, it runs in that worker. They talk over a socket, moving data back and forth as Arrow, or pickle for some types. And it works: it covers essentially every UDF type, in production, at very large scale.">
+      <div class="slide-header"><div class="eyebrow">Reference point</div></div>
+      <h2 class="title">How PySpark runs UDFs today</h2>
+
+      <div class="grid cols-2">
+        <div>
+          <div class="pyspark-fig">
+            <div class="box spark"><b>Spark executor</b><br/><span class="dim">runs your tasks</span></div>
+            <div class="conn">socket<br/>↔</div>
+            <div class="box worker"><b>Python worker</b><br/><span class="dim">where your code runs</span></div>
+          </div>
+          <p class="dim" style="margin-top:18px;font-size:15px;">Your Python code doesn&rsquo;t run inside Spark &mdash; it runs in a separate worker process next to each executor.</p>
+          <p class="muted" style="margin-top:14px;">Already covers a wide surface: scalar, pandas-batched, grouped map, table functions, aggregators.</p>
+        </div>
+        <div class="card">
+          <h4>The shape</h4>
+          <ul>
+            <li><b>Separate process</b> &mdash; a worker runs alongside each executor</li>
+            <li><b>Data</b> &mdash; Arrow (newer Spark), or pickle for some types</li>
+            <li><b>Planning</b> &mdash; Python-specific rules baked into the engine</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="slide-footer"><span>PySpark today</span><span>7 / 18</span></div>
+      <div class="progress"><i></i></div>
+    </section>
+
+<section class="slide" data-notes="That said, there are a few things about how PySpark is built that keep it from generalizing to other languages.
+
+First, the UDF planning is Python-specific — the engine's rules only understand Python, and there's nothing for Go or Rust or Swift to reuse. Second, the protocol between Spark and the worker is hand-written and position-based — it isn't well structured, so it's hard to version, and hard for another language to reuse. And third, the language-specific pieces — how the worker is launched, how its runtime is managed — are wired into the engine core itself. The cleaner design is to decouple the core engine from those language details, so that adding a language doesn't mean changing the engine.
+
+So our goal is simple: keep everything PySpark gets right, and generalize exactly those three things.">
+      <div class="slide-header"><div class="eyebrow">Reference point</div></div>
+      <h2 class="title">&hellip; and why it can&rsquo;t scale as‑is</h2>
+
+      <div class="grid cols-3">
+        <div class="card">
+          <h4>Planning is Python‑specific</h4>
+          <p class="muted">The engine&rsquo;s UDF planning rules only understand Python &mdash; nothing for Go / Rust / Swift to reuse.</p>
+        </div>
+        <div class="card">
+          <h4>Hand-written socket protocol</h4>
+          <pre class="code mono" style="font-size:14px;line-height:1.4;">
+<span class="c"># worker.py</span>
+<span class="k">read_int</span>(infile)
+<span class="k">read_long</span>(infile)
+<span class="k">read_bytes</span>(infile)
+<span class="c"># position-oriented, brittle</span>
+          </pre>
+          <p class="muted" style="margin-top:8px;">Hard to version, hard to evolve, hard to reuse.</p>
+        </div>
+        <div class="card">
+          <h4>Engine coupled to language specifics</h4>
+          <p class="muted">Launching and managing the language worker is wired into the core. The engine should be <b>decoupled</b> from any one language&rsquo;s details.</p>
+        </div>
+      </div>
+
+      <div class="slide-footer"><span>PySpark limitations</span><span>8 / 18</span></div>
+      <div class="progress"><i></i></div>
+    </section>
+
+<section class="slide" data-notes="Here is the high-level shape of the proposal. It has three pillars — and it's the three of them working together that answer the problems we just saw, not one pillar per problem.
+
+The first two let Spark plan and execute a UDF in a completely language-agnostic way, no matter what transport sits underneath: one is generic planning, and the other is a generic, structured protocol. The third pillar establishes a contract — a worker specification — that hides all the language-specific details. In other words: be language-agnostic everywhere we can be, and language-specific only where we must be.">
+      <div class="slide-header"><div class="eyebrow">Proposal</div></div>
+      <h2 class="title">Three pillars</h2>
+      <h3 class="subtitle">Language‑agnostic <span class="dim">where it can be</span>. Language‑specific <span class="dim">only where it must be</span>.</h3>
+
+      <div class="pillars">
+        <div class="pillar">
+          <span class="num">01</span>
+          <span class="badge">Pillar 1</span>
+          <h4>Language‑agnostic planning</h4>
+          <p>Plan UDFs by their <b>execution shape</b>, not by language. Standardized data formats (Arrow first).</p>
+        </div>
+        <div class="pillar">
+          <span class="num">02</span>
+          <span class="badge">Pillar 2</span>
+          <h4>Standardized execution protocol</h4>
+          <p>One structured, versioned, streaming protocol between Spark and any worker. <span class="mono accent">init → data → finish</span>.</p>
+        </div>
+        <div class="pillar">
+          <span class="num">03</span>
+          <span class="badge">Pillar 3</span>
+          <h4>Declarative worker specification</h4>
+          <p>The client tells Spark how to <b>start, connect, expect</b> &mdash; runtimes leave the engine.</p>
+        </div>
+      </div>
+
+      <p class="muted" style="margin-top:28px;">Each pillar makes <b class="accent">one</b> thing replaceable without touching the others.</p>
+
+      <div class="slide-footer"><span>Architecture overview</span><span>9 / 18</span></div>
+      <div class="progress"><i></i></div>
+    </section>
+
+<section class="slide" data-notes="Let's take them one at a time. Pillar one is to plan a UDF by its shape. A scalar UDF takes one row and returns one row, and can be used as an expression anywhere in the query. A mapPartitions function processes a whole partition at a time. A grouped function runs after a grouping, one key-group at a time. A table function takes one row and returns many. And an aggregator reduces, then merges. Those shapes are exactly what Spark needs in order to plan and partition the work — and notice that none of it depends on the language. PySpark already plans this way; we're simply making it general.">
+      <div class="slide-header"><div class="eyebrow">Pillar 1</div><div class="tag">Language-agnostic planning</div></div>
+      <h2 class="title">Plan by <span class="accent">shape</span>, not by language</h2>
+
+      <div class="grid cols-2">
+        <div>
+          <ul>
+            <li><b>Scalar</b> &mdash; one row in, one row out</li>
+            <li><b>mapPartitions</b> &mdash; a whole partition at a time</li>
+            <li><b>Grouped map</b> &mdash; input grouped by key</li>
+            <li><b>Table function</b> &mdash; one row in, many out</li>
+            <li><b>Aggregator</b> &mdash; multi-round reduce/merge</li>
+          </ul>
+          <p class="muted" style="margin-top:18px;">These shapes are what Spark needs to plan the work &mdash; <b>none of it is Python-specific.</b></p>
+        </div>
+        <div class="card accent">
+          <h4>The shape decides the plan</h4>
+          <ul>
+            <li>How to partition the data</li>
+            <li>Which physical operator to use</li>
+            <li>How results are gathered back</li>
+          </ul>
+          <p class="dim" style="margin-top:8px;font-size:16px;">All of it from the <b>shape</b> &mdash; none of it from the language.</p>
+        </div>
+      </div>
+
+      <div class="slide-footer"><span>Pillar 1 · planning</span><span>10 / 18</span></div>
+      <div class="progress"><i></i></div>
+    </section>
+
+<section class="slide" data-notes="Pillar two is the protocol itself — how Spark and the worker actually communicate. Every UDF execution, whatever its type, follows the same three phases. In Init, we open the connection and send the function and the schemas. In Data, we stream input batches in and stream results back — and those two directions are independent of each other. And in Finish, we flush the results and clean up. A few of the more complex types just run that round-trip more than once — an aggregator, for instance, does a reduce pass and then a merge pass.
+
+Now, that lifecycle has to run over some transport. Today it runs over a raw socket — position-based bytes, with the contract hidden inside worker.py, and it's brittle: adding a feature can mean injecting an extra flag into the byte stream. So as an alternative, we propose a structured transport, and gRPC with Protobuf is a natural fit. The wins are real: schema evolution, so we can add fields without breaking anything; streaming with built-in back-pressure for data-intensive UDFs; and language neutrality, because every major language already has the tooling. And crucially, it's the same lifecycle on both — so the socket path stays exactly as it is for PySpark, and gRPC is simply added alongside.">
+      <div class="slide-header"><div class="eyebrow">Pillar 2</div><div class="tag">Execution protocol</div></div>
+      <h2 class="title">One protocol &mdash; <span class="accent">Init → Data → Finish</span>, over any transport</h2>
+
+      <div class="grid cols-2-3">
+        <div>
+          <p class="muted" style="margin:0 0 10px;">Every UDF execution, any type, runs the same three phases:</p>
+          <ul style="margin-top:0;">
+            <li><b>Init</b> &mdash; connect; send the UDF body + schemas</li>
+            <li><b>Data</b> &mdash; stream input in, results back <span class="dim">(independent directions)</span></li>
+            <li><b>Finish</b> &mdash; flush, release, terminate</li>
+          </ul>
+          <div class="card" style="margin-top:18px;">
+            <h4>Over any transport</h4>
+            <p class="muted" style="margin:0;"><b>Today:</b> a raw socket &mdash; contract hidden in <span class="mono">worker.py</span>.<br/><b>Proposal:</b> a structured one &mdash; <span class="accent">gRPC + Protobuf</span> &mdash; added alongside. <span class="dim">Same lifecycle on both.</span></p>
+            <ul style="margin:10px 0 0;font-size:17px;">
+              <li>Schema evolution &mdash; add fields without breaking</li>
+              <li>Streaming + back-pressure <span class="dim">(receiver can slow the sender)</span></li>
+              <li>Every language already has the tooling</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="lifecycle">
+          <div class="lc-head"><span>Spark</span><span class="w">Worker</span></div>
+
+          <div class="lc-phase">
+            <div class="lc-tag">Init</div>
+            <div class="lc-msg to-right"><span class="lc-text">UDF body &middot; input/output schema &middot; config</span></div>
+          </div>
+
+          <div class="lc-phase">
+            <div class="lc-tag">Data stream <em>&mdash; independent, no lockstep</em></div>
+            <div class="lc-msg to-right"><span class="lc-text">input batches &mdash; Arrow</span></div>
+            <div class="lc-msg to-left"><span class="lc-text">result batches</span></div>
+          </div>
+
+          <div class="lc-phase">
+            <div class="lc-tag">Finish</div>
+            <div class="lc-msg to-left"><span class="lc-text">flush remaining results &middot; done</span></div>
+            <div class="lc-note">connection closes &middot; worker released</div>
+          </div>
+
+          <div class="lc-phase">
+            <div class="lc-note" style="margin-top:0;">&#8635; Complex types repeat the round-trip &mdash; an aggregator does <b>reduce</b>, then <b>merge</b>.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="slide-footer"><span>Pillar 2 · protocol</span><span>11 / 18</span></div>
+      <div class="progress"><i></i></div>
+    </section>
+
+
+
+<section class="slide" data-notes="There's one very practical point here, and it's the part we're building right now. We cannot break the millions of PySpark jobs that already exist — so rule number one is: don't change existing behavior. The tempting approach would be to write a whole new gRPC worker, but that leaves you with two parallel implementations that drift apart and double your bugs. So instead, we split worker.py into two parts: the UDF processing logic on one side — deserialize, run, serialize — which stays shared and unchanged, and the transport on the other.
+
+An adapter sits between them and swaps the transport underneath. The socket path stays the default until gRPC is fully validated; gRPC is opt-in. One processing core, two transports — safe and incremental. This is already shipping in apache/spark, under udf/worker. And notice a worker can vary in more than transport: the data format too — Arrow first, but not locked to Arrow — and capabilities, like whether it supports UDF chaining, which lets Spark optimize during planning. Which raises the question: how does Spark know all of this about a worker? That's the third pillar.">
+      <div class="slide-header"><div class="eyebrow">Pillar 2</div><div class="tag">Adoption without disruption</div></div>
+      <h2 class="title">Don&rsquo;t replace the PySpark worker &mdash; <span class="accent">split the seam</span></h2>
+      <h3 class="subtitle">Rule #1 for PySpark: don&rsquo;t change existing behavior. So separate <em>transport</em> from <em>UDF logic</em>, and make transport pluggable.</h3>
+
+      <div class="grid cols-2-3">
+        <div>
+          <div class="card warn" style="border-color:rgba(255,189,74,0.4);background:rgba(255,189,74,0.06);">
+            <span class="chip warn">The trap</span>
+            <h4 style="margin-top:12px;">A whole new gRPC worker</h4>
+            <ul style="font-size:19px;">
+              <li>Two parallel UDF implementations</li>
+              <li>Double the bugs; the paths drift</li>
+              <li>Risks the huge existing install base</li>
+            </ul>
+          </div>
+          <p class="muted" style="margin-top:16px;font-size:19px;">Instead: <b>one</b> processing core, <b>swappable</b> transport underneath.</p>
+        </div>
+
+        <div>
+          <div class="diagram" style="flex-direction:column;gap:12px;">
+            <div class="box" style="border-color:rgba(74,210,149,0.5);background:rgba(74,210,149,0.06);">
+              <b>UDF processing logic</b> &nbsp;<span class="dim mono">(deserialize · run · serialize)</span><br/>
+              <span class="dim" style="font-size:14px;">shared &mdash; unchanged across transports</span>
+            </div>
+            <div class="arrow" style="transform:rotate(90deg);">&harr;</div>
+            <div class="box spec">
+              <b>Transport adapter</b><br/>
+              <span class="dim" style="font-size:14px;">the new seam &mdash; chooses the channel</span>
+            </div>
+            <div style="display:flex;gap:12px;width:100%;">
+              <div class="box" style="border-color:var(--c-line);">
+                <b>Socket transport</b><br/>
+                <span class="good" style="font-size:14px;">socket / Python path stays default until full validation</span>
+              </div>
+              <div class="box worker">
+                <b>gRPC transport</b><br/>
+                <span class="accent" style="font-size:14px;">new &middot; opt-in &middot; structured</span>
+              </div>
+            </div>
+          </div>
+          <p class="dim" style="margin-top:14px;font-size:16px;">Shipping now in <span class="mono">apache/spark &middot; udf/worker</span> &mdash; transport-agnostic core, gRPC over a Unix-domain socket (local, fast) as the first transport.</p>
+        </div>
+      </div>
+
+      <div class="slide-footer"><span>Pillar 2 · adapter layer</span><span>12 / 18</span></div>
+      <div class="progress"><i></i></div>
+    </section>
+
+<section class="slide" data-notes="Pillar three is the worker spec — a declarative contract. Spark doesn't need to know how a worker was built; it only needs to know three things: how to start it, how to connect to it, and what to expect from it.
+
+This is what lets the language runtimes leave the engine. Instead of being bundled inside Spark, they live in the worker environment — a local install, a container image, or a remote service — and Spark plans the work from the capabilities the spec declares. And it's what fully decouples the core engine from language-specific details. Forward compatibility really comes from the pillars working together: language-agnostic planning, a versioned protocol, and a worker spec the client controls. In Spark Connect, the client owns that spec, and none of these have to evolve with the engine — so an older client keeps running its UDF against a newer server, with the runtime pinned by its own spec, on a separate track from the Spark version.">
+      <div class="slide-header"><div class="eyebrow">Pillar 3</div><div class="tag">Worker spec</div></div>
+      <h2 class="title">The worker specification &mdash; a declarative contract</h2>
+      <h3 class="subtitle">Spark <span class="accent">orchestrates</span>. Languages bring their own runtime.</h3>
+
+      <div class="grid cols-2">
+        <div class="card">
+          <h4>What the spec declares</h4>
+          <ul>
+            <li><b>How to start</b> the worker &mdash; a callable / launch script</li>
+            <li><b>How Spark connects</b> &mdash; UDS path, TCP port, gRPC endpoint</li>
+            <li><b>How to clean up</b> &mdash; verify, install, terminate</li>
+            <li><b>What to expect</b> &mdash; data formats, parallelism, reuse, chaining</li>
+          </ul>
+        </div>
+        <div class="card accent">
+          <h4>What changes for Spark</h4>
+          <ul>
+            <li>No language specifics <b>baked</b> into the engine</li>
+            <li>Runtimes &amp; deps live in the <b>worker environment</b> &mdash; local install, container image, or remote service &mdash; the spec describes how Spark reaches it</li>
+            <li><b>Engine decoupled from language details</b> &mdash; the client owns the spec, on its own version track, so an old client keeps working on a newer server <span class="dim">(part of what restores forward compatibility)</span></li>
+            <li>Spark routes planning &amp; scheduling off the spec&rsquo;s <b>capabilities</b></li>
+            <li>Pool workers by spec hash + security scope &mdash; safely reuse them</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="slide-footer"><span>Pillar 3 · worker spec</span><span>13 / 18</span></div>
+      <div class="progress"><i></i></div>
+    </section>
+
+<section class="slide" data-notes="And because the contract is declarative, the very same protocol supports workers that run in completely different ways. It can be a local process next to the executor — which is exactly what PySpark is today. It can be a container, when you want stronger isolation. Or it can be a remote worker running entirely outside the cluster — on dedicated hardware, on a GPU, or even on a service like AWS Lambda.
+
+To make that concrete: picture a pipeline that needs to run a GPU-backed model inside a Spark query. Today you either over-size the whole cluster, or pull the data out and run the model by hand. Here, the model runs in a worker environment that has the right hardware, and Spark just talks to it over the same protocol. The protocol is the boundary — where the worker actually runs is no longer Spark's problem. And that's what lets UDFs escape the cluster's resource limits — the third problem we opened with.">
+      <div class="slide-header"><div class="eyebrow">Pillar 3</div><div class="tag">Beyond local</div></div>
+      <h2 class="title">Same contract &mdash; local, container, or remote</h2>
+
+      <div class="grid cols-3">
+        <div class="card">
+          <span class="chip">Local process</span>
+          <h4 style="margin-top:12px;">Spawn next to executor</h4>
+          <ul>
+            <li>Pre-installed runtime</li>
+            <li>Launch script + UDS endpoint</li>
+            <li>SIGTERM/SIGKILL lifecycle</li>
+          </ul>
+          <p class="dim" style="font-size:16px;">Today&rsquo;s PySpark fits here.</p>
+        </div>
+        <div class="card">
+          <span class="chip info">Container</span>
+          <h4 style="margin-top:12px;">Docker / OCI image</h4>
+          <ul>
+            <li>Pre-install Docker + image</li>
+            <li>Launcher starts a container</li>
+            <li>Stronger isolation, hermetic deps</li>
+          </ul>
+        </div>
+        <div class="card accent">
+          <span class="chip accent">Remote (future)</span>
+          <h4 style="margin-top:12px;">Worker outside the cluster</h4>
+          <ul>
+            <li>Dedicated / GPU compute, or a service like <b>AWS Lambda</b></li>
+            <li>Indirect provisioning &mdash; spec returns an endpoint</li>
+            <li>Same protocol on the wire</li>
+          </ul>
+        </div>
+      </div>
+
+      <p class="muted" style="margin-top:22px;">The protocol is the boundary. <span class="accent">Where</span> the worker lives stops being Spark&rsquo;s concern.</p>
+
+      <div class="slide-footer"><span>Pillar 3 · provisioning models</span><span>14 / 18</span></div>
+      <div class="progress"><i></i></div>
+    </section>
+
+<section class="slide" data-notes="Now, I want to be clear that this isn't just a design on paper. The SPIP has already passed its community vote, and the first pieces are landing in Apache Spark, under the udf/worker package — the protocol definition and the core abstractions, with the gRPC backend and the Spark Classic and Spark Connect integration under active development.
+
+From here, the next milestones are: get a first PySpark eval type working end-to-end on the new protocol; then more eval types; and then the first language beyond Python.">
+      <div class="slide-header"><div class="eyebrow">Status</div><div class="tag">In the open</div></div>
+      <h2 class="title">Status &mdash; landing in Apache Spark</h2>
+
+      <div class="grid cols-2">
+        <div>
+          <h4 style="color:var(--c-good);margin-top:0;">Done</h4>
+          <ul>
+            <li><b>SPIP</b> &mdash; <span class="mono">SPARK-55278</span>, community vote passed</li>
+          </ul>
+          <h4 style="margin-top:16px;">Landing / under active development</h4>
+          <ul>
+            <li>First pieces in <span class="mono">/udf/worker</span> &mdash; proto + core abstractions, gRPC backend</li>
+            <li>Spark Classic &amp; Spark Connect integration</li>
+          </ul>
+          <p class="dim" style="margin-top:14px;font-size:16px;">SPIP design docs + public vote thread on dev@spark; code in tree under <span class="mono">/udf/worker</span>.</p>
+        </div>
+
+        <div class="card">
+          <h4>Next milestones</h4>
+          <ul>
+            <li><b>1.</b> First PySpark eval type, end-to-end on the new protocol</li>
+            <li><b>2.</b> More eval types</li>
+            <li><b>3.</b> First language beyond Python</li>
+          </ul>
+          <p class="dim" style="margin-top:10px;font-size:14px;">eval type = a category of UDF (scalar, grouped map, aggregator, &hellip;).</p>
+        </div>
+      </div>
+
+      <div class="slide-footer"><span>Status &amp; roadmap</span><span>15 / 18</span></div>
+      <div class="progress"><i></i></div>
+    </section>
+
+<section class="slide" data-notes="So what does this unlock? And I want to stress the benefits aren't limited to Spark Connect. Three things, mapping straight back to the three problems we started with. One: any language, not just Python — new communities implement UDFs once against a shared protocol. Two: UDF runtimes get decoupled from Spark upgrades, so far fewer surprises across versions — this doesn't make every compatibility issue vanish, but it moves the language runtime and dependency compatibility onto an explicit, client-controlled track. And three: heavy and GPU UDFs can run anywhere — a container, a remote machine, an accelerator pool — so resources become a choice, not a constraint. And as a bonus, Spark itself gets lighter: new execution shapes arrive as specs, not as rewrites of the engine.
+
+And if you're sitting there as a PySpark user: nothing breaks for you. Your existing UDFs keep working exactly as they do today — most of this is under the hood — and the new options, like running on a GPU or a remote worker, are opt-in.">
+      <div class="slide-header"><div class="eyebrow">Why it matters</div></div>
+      <h2 class="title">What this unlocks</h2>
+
+      <div class="grid cols-3">
+        <div class="card">
+          <h4>Any language &mdash; not just Python</h4>
+          <p class="muted"><span class="dim">Problem 1.</span> New communities implement UDFs once against a shared protocol &mdash; Go, Rust, Swift, .NET stop re-inventing the stack.</p>
+        </div>
+        <div class="card">
+          <h4>UDF runtimes decoupled from Spark upgrades</h4>
+          <p class="muted"><span class="dim">Problem 2.</span> The runtime versions on its own track, not the engine&rsquo;s &mdash; fewer UDF surprises across upgrades.</p>
+        </div>
+        <div class="card accent">
+          <h4>Run heavy &amp; GPU UDFs anywhere</h4>
+          <p class="muted"><span class="dim">Problem 3.</span> Container, remote, or GPU workers &mdash; resources become a choice, not a constraint.</p>
+        </div>
+      </div>
+
+      <p class="muted" style="margin-top:22px;">And Spark itself gets lighter &mdash; new execution shapes arrive as <b class="accent">specs</b>, not engine rewrites.</p>
+      <p class="dim" style="margin-top:12px;font-size:17px;">If you write PySpark today: nothing breaks &mdash; your existing UDFs keep working, most of this is under the hood, and new options (GPU, remote) are opt-in.</p>
+
+      <div class="slide-footer"><span>What it unlocks</span><span>16 / 18</span></div>
+      <div class="progress"><i></i></div>
+    </section>
+
+<section class="slide" data-notes="I want to end by saying that this is genuinely community work. Thank you to my co-authors and shepherds — Tian, Sven Weber, Daniel Tenedorio, Herman van Hovell, and DB Tsai — and to the many contributors and reviewers across the open-source Spark community, from a number of different companies. To me, this is the open-source community at its very best.">
+      <div class="slide-header"><div class="eyebrow">Acknowledgments</div><div class="tag">Thank you</div></div>
+      <h2 class="title">This is community work</h2>
+      <h3 class="subtitle">Thanks to everyone shaping the design and the first lines of code.</h3>
+
+      <div class="grid cols-1-2">
+        <div class="card">
+          <span class="chip accent">SPIP proposal &amp; shepherds</span>
+          <ul style="font-size:19px;margin-top:14px;">
+            <li class="muted">Haiyang Sun</li>
+            <li class="muted">Tian Gao</li>
+            <li class="muted">Sven Weber</li>
+            <li class="muted">Daniel Tenedorio</li>
+            <li class="muted">Herman van Hovell</li>
+            <li class="muted">DB Tsai</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <span class="chip accent">Contribution / discussion &mdash; open-source Spark community</span>
+          <ul style="font-size:18px;margin-top:14px;column-count:2;column-gap:48px;">
+            <li class="muted">Holden Karau</li>
+            <li class="muted">Hyukjin Kwon</li>
+            <li class="muted">Wenchen Fan</li>
+            <li class="muted">Yicong Huang</li>
+            <li class="muted">Xianzhe Ma</li>
+            <li class="muted">Lionel Montrieux</li>
+            <li class="muted">Martin Grund</li>
+            <li class="muted">Sven Wagner-Boysen</li>
+            <li class="muted">Sebastian Hillig</li>
+            <li class="muted">Elliott Brossard</li>
+            <li class="muted">Liang Chi Hsieh</li>
+            <li class="muted">Felix Cheung</li>
+            <li class="muted">Varun Srinivas</li>
+            <li class="dim">&hellip; and more</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="slide-footer"><span>Acknowledgments</span><span>17 / 18</span></div>
+      <div class="progress"><i></i></div>
+    </section>
+
+<section class="slide closing-slide" data-notes="So, to wrap up: this is a proposal for a language-agnostic way to run UDFs in Spark, and the first pieces are already landing in the codebase. The design is open, and it is still early — which means your feedback genuinely matters. The proposal is JIRA ticket SPARK-55278, and the code lives in Apache Spark, under udf/worker.
+
+Thank you very much. Tian and I would be very happy to take your questions.">
+      <div class="eyebrow">DAIS 2026 · SPARK-55278</div>
+      <h2 class="title">Thank you.</h2>
+      <h3 class="subtitle" style="font-size:32px;">Questions &mdash; feedback &mdash; and which language do <em>you</em> want UDFs in?</h3>
+
+      <div style="display:flex;gap:36px;margin-top:48px;flex-wrap:wrap;">
+        <div>
+          <div class="dim" style="font-size:14px;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:6px;">Speakers</div>
+          <div style="font-size:22px;"><b>Haiyang Sun</b> &middot; Databricks</div>
+          <div class="muted mono" style="font-size:17px;">haiyang.sun@databricks.com</div>
+          <div style="font-size:22px;margin-top:10px;"><b>Tian Gao</b> &middot; Databricks</div>
+          <div class="muted mono" style="font-size:17px;">tian.gao@databricks.com</div>
+        </div>
+        <div>
+          <div class="dim" style="font-size:14px;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:6px;">Follow along</div>
+          <div style="font-size:20px;">JIRA &middot; <span class="mono accent">SPARK-55278</span></div>
+          <div class="muted" style="font-size:18px;">SPIP discussion on dev@spark</div>
+          <div class="muted" style="font-size:18px;">Code: <span class="mono">apache/spark · udf/worker</span></div>
+        </div>
+      </div>
+
+      <div class="slide-footer"><span>Q &amp; A</span><span>18 / 18</span></div>
+      <div class="progress"><i></i></div>
+    </section>
+
+<section class="slide" data-notes="This is an illustrative sketch of what the protocol could look like. There is a single, bidirectional Execute stream that carries both control messages and data messages. I want to stress that this is not final — it is here to show that the shape is feasible, and that it simply formalizes what PySpark is already doing today.">
+      <div class="slide-header"><div class="eyebrow">BACKUP · Pillar 2</div><div class="tag">Illustrative</div></div>
+      <h2 class="title">Illustrative protocol</h2>
+
+      <div class="protobox">
+        <pre class="code mono" style="font-size:16px;">
+<span class="k">service</span> <span class="t">UdfWorker</span> {
+  <span class="c">// one execution = one bidi stream</span>
+  <span class="k">rpc</span> Execute(<span class="k">stream</span> UdfRequest)
+      <span class="k">returns</span> (<span class="k">stream</span> UdfResponse);
+
+  <span class="k">rpc</span> Manage(WorkerRequest)
+      <span class="k">returns</span> WorkerResponse;
+}
+
+<span class="k">message</span> <span class="t">UdfRequest</span> {
+  <span class="k">oneof</span> request {
+    UdfControlRequest control = <span class="n">1</span>;
+    DataRequest       data    = <span class="n">2</span>;
+  }
+}
+
+<span class="k">message</span> <span class="t">UdfControlRequest</span> {
+  <span class="k">oneof</span> control {
+    Init   init   = <span class="n">1</span>;
+    Finish finish = <span class="n">2</span>;
+    Cancel cancel = <span class="n">3</span>;
+  }
+}</pre>
+
+        <pre class="code mono" style="font-size:16px;">
+<span class="k">message</span> <span class="t">DataBatch</span> {
+  <span class="k">bytes</span>  raw    = <span class="n">1</span>;
+  <span class="t">Format</span> format = <span class="n">2</span>;
+}
+
+<span class="k">enum</span> <span class="t">Format</span> {
+  FORMAT_UNSPECIFIED = <span class="n">0</span>;
+  FORMAT_ARROW       = <span class="n">1</span>;
+  FORMAT_AVRO        = <span class="n">2</span>;
+}
+
+<span class="k">message</span> <span class="t">DataRequest</span> {
+  DataBatch data = <span class="n">1</span>;
+  <span class="k">map</span>&lt;<span class="k">string</span>,<span class="k">string</span>&gt; metadata = <span class="n">2</span>;
+  <span class="c">// batch id, grouping key, ...</span>
+}
+
+<span class="c">// Spark streams input → worker.
+// Worker streams results → Spark.
+// Control + data are independent.</span></pre>
+      </div>
+
+      <div class="slide-footer"><span>Backup · proto sketch</span><span>Backup</span></div>
+      <div class="progress"><i></i></div>
+    </section>
+
+  </div>
+</div>
+
+<div id="help">
+  <div><b>Navigation</b></div>
+  <div><span class="kbd">→</span> <span class="kbd">Space</span> next &nbsp; <span class="kbd">←</span> prev</div>
+  <div><span class="kbd">Home</span> first &nbsp; <span class="kbd">End</span> last</div>
+  <div><span class="kbd">F</span> fullscreen &nbsp; <span class="kbd">N</span> notes &nbsp; <span class="kbd">P</span> presenter &nbsp; <span class="kbd">?</span> help</div>
+</div>
+
+<div id="notes"></div>
+
+<!-- Presenter view (rendered only in the window opened with ?presenter=1) -->
+<div id="presenter-root">
+  <div class="pv-top">
+    <span class="pv-timer" id="pv-timer">00:00</span>
+    <button class="pv-btn" id="pv-reset">Reset timer</button>
+    <span class="pv-clock" id="pv-clock"></span>
+    <span class="pv-hint">← / → to navigate · advances the main window too</span>
+    <span class="pv-count" id="pv-count">1 / 1</span>
+  </div>
+  <div class="pv-body">
+    <div class="pv-left">
+      <div class="pv-label">Current slide</div>
+      <div class="pv-stage"><div class="pv-scaler" id="pv-cur"></div></div>
+    </div>
+    <div class="pv-right">
+      <div class="pv-label" id="pv-next-label">Next slide</div>
+      <div class="pv-stage"><div class="pv-scaler" id="pv-next"></div></div>
+      <div class="pv-label">Speaker notes</div>
+      <div class="pv-notes" id="pv-notes"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const deck = document.getElementById('deck');
+  const slides = Array.from(deck.querySelectorAll('.slide'));
+  const total = slides.length;
+  let idx = 0;
+
+  function fit() {
+    const sw = 1600, sh = 900;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const pad = 24;
+    const scale = Math.min((vw - pad*2) / sw, (vh - pad*2) / sh);
+    deck.style.transform = `scale(${scale})`;
+  }
+  window.addEventListener('resize', fit);
+  fit();
+
+  const notesEl = document.getElementById('notes');
+  const helpEl = document.getElementById('help');
+
+  // staggered "rise-in" entrance for the active slide's content blocks
+  function animateIn(slide) {
+    const blocks = Array.from(slide.children).filter(el =>
+      !el.classList.contains('slide-footer') && !el.classList.contains('progress'));
+    blocks.forEach(el => { el.classList.add('anim'); el.classList.remove('in'); el.style.transitionDelay = '0ms'; });
+    void slide.offsetWidth; // reflow so the transition replays
+    blocks.forEach((el, k) => { el.style.transitionDelay = (k * 85) + 'ms'; el.classList.add('in'); });
+  }
+
+  function render() {
+    slides.forEach((s, i) => s.classList.toggle('active', i === idx));
+    const slide = slides[idx];
+    animateIn(slide);
+    // progress
+    slides.forEach(s => {
+      const p = s.querySelector('.progress > i');
+      if (p) p.style.width = ((idx + 1) / total * 100).toFixed(2) + '%';
+    });
+    // (footer page numbers are static in the markup: "N / 19" + "Backup")
+    // notes — highlight [cue] markers in accent colour
+    const raw = slide.getAttribute('data-notes') || '';
+    const esc = raw
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    const formatted = esc.replace(/\[([^\]]+)\]/g, '<span class="cue">[$1]</span>');
+    notesEl.innerHTML = '<b>Speaker notes &middot; ' + (idx+1) + ' / ' + total + '</b>\n\n' + formatted;
+    // url hash
+    if (history.replaceState) history.replaceState(null, '', '#' + (idx + 1));
+    // mirror to presenter window UI when this is the presenter view
+    if (document.body.classList.contains('presenter')) updatePresenter();
+  }
+
+  function go(n, fromSync) {
+    idx = Math.max(0, Math.min(total - 1, n));
+    render();
+    if (!fromSync) syncOut();
+  }
+  function next() { go(idx + 1); }
+  function prev() { go(idx - 1); }
+
+  // ---------- cross-window sync (main deck <-> presenter window) ----------
+  const PRESENTER = /[?&]presenter\b/.test(location.search);
+  const isBackup = s => { const e = s.querySelector('.slide-footer > span:last-child'); return !!e && /^backup$/i.test(e.textContent.trim()); };
+  const MAIN_TOTAL = total - slides.filter(isBackup).length;
+  const SYNCKEY = 'dais-jun10-idx';
+  const bc = ('BroadcastChannel' in window) ? new BroadcastChannel('dais-jun10') : null;
+  let lastStamp = '';
+  function syncOut() {
+    const v = idx + '|' + Date.now();
+    lastStamp = v;
+    try { localStorage.setItem(SYNCKEY, v); } catch (e) {}
+    if (bc) { try { bc.postMessage(idx); } catch (e) {} }
+  }
+  function syncIn(n) { if (typeof n === 'number' && !isNaN(n) && n !== idx) go(n, true); }
+  if (bc) bc.onmessage = e => syncIn(+e.data);
+  // localStorage polling fallback (works across windows even on file://)
+  setInterval(function () {
+    try {
+      const v = localStorage.getItem(SYNCKEY);
+      if (v && v !== lastStamp) { lastStamp = v; syncIn(parseInt(v.split('|')[0], 10)); }
+    } catch (e) {}
+  }, 200);
+
+  function openPresenter() {
+    const url = location.href.split('#')[0].split('?')[0] + '?presenter=1';
+    const w = window.open(url, 'dais-presenter', 'width=1280,height=820');
+    syncOut();              // seed the new window with the current position
+    if (w) w.focus();
+  }
+
+  // ---------- presenter view rendering ----------
+  let pvStart = Date.now();
+  function fmtDur(ms) {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    const m = Math.floor(s / 60), ss = s % 60, h = Math.floor(m / 60), mm = m % 60;
+    return (h > 0 ? h + ':' + String(mm).padStart(2, '0') : String(m).padStart(2, '0')) + ':' + String(ss).padStart(2, '0');
+  }
+  function cloneSlide(slide) {
+    const c = slide.cloneNode(true);
+    c.classList.add('active');
+    c.style.opacity = '1'; c.style.transform = 'none';
+    c.querySelectorAll('.anim').forEach(function (el) {
+      el.classList.remove('anim'); el.classList.add('in');
+      el.style.opacity = '1'; el.style.transform = 'none'; el.style.transitionDelay = '0ms';
+    });
+    return c;
+  }
+  function fitScaler(scaler) {
+    if (!scaler || !scaler.parentElement) return;
+    scaler.style.transform = 'scale(' + (scaler.parentElement.clientWidth / 1600) + ')';
+  }
+  function updatePresenter() {
+    const cur = document.getElementById('pv-cur'), nxt = document.getElementById('pv-next');
+    if (!cur || !nxt) return;
+    cur.innerHTML = ''; cur.appendChild(cloneSlide(slides[idx])); fitScaler(cur);
+    if (idx + 1 < total) { nxt.innerHTML = ''; nxt.appendChild(cloneSlide(slides[idx + 1])); }
+    else { nxt.innerHTML = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#5a6b76;font-size:40px;">End of deck</div>'; }
+    fitScaler(nxt);
+    const raw = slides[idx].getAttribute('data-notes') || '';
+    const esc = raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    document.getElementById('pv-notes').innerHTML = esc.replace(/\[([^\]]+)\]/g, '<span class="cue">[$1]</span>');
+    document.getElementById('pv-count').textContent = isBackup(slides[idx]) ? 'Backup' : ((idx + 1) + ' / ' + MAIN_TOTAL);
+  }
+  function buildPresenter() {
+    pvStart = Date.now();
+    const tEl = document.getElementById('pv-timer'), cEl = document.getElementById('pv-clock');
+    setInterval(function () {
+      tEl.textContent = fmtDur(Date.now() - pvStart);
+      cEl.textContent = new Date().toLocaleTimeString();
+    }, 500);
+    document.getElementById('pv-reset').addEventListener('click', function () { pvStart = Date.now(); });
+    window.addEventListener('resize', function () {
+      fitScaler(document.getElementById('pv-cur')); fitScaler(document.getElementById('pv-next'));
+    });
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.target && /input|textarea/i.test(e.target.tagName)) return;
+    switch (e.key) {
+      case 'ArrowRight':
+      case 'PageDown':
+      case ' ':
+        e.preventDefault(); next(); break;
+      case 'ArrowLeft':
+      case 'PageUp':
+        e.preventDefault(); prev(); break;
+      case 'Home': e.preventDefault(); go(0); break;
+      case 'End':  e.preventDefault(); go(total - 1); break;
+      case 'f': case 'F':
+        if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+        else document.exitFullscreen();
+        break;
+      case 'n': case 'N':
+        notesEl.classList.toggle('show'); break;
+      case 'p': case 'P':
+        if (!PRESENTER) openPresenter(); break;
+      case '?':
+        helpEl.classList.toggle('show'); break;
+      default:
+        if (/^[0-9]$/.test(e.key)) {
+          // not used; reserved for chord
+        }
+    }
+  });
+
+  // Click to advance (right half) or go back (left half) — main window only
+  document.addEventListener('click', e => {
+    if (PRESENTER) return;
+    if (e.target.closest('a,button,input,textarea,#notes,#help')) return;
+    const x = e.clientX, w = window.innerWidth;
+    if (x > w * 0.5) next(); else prev();
+  });
+
+  // Initial position: hash, then shared state (so the presenter window opens in sync)
+  const hash = parseInt(location.hash.replace('#',''), 10);
+  if (!isNaN(hash) && hash >= 1 && hash <= total) idx = hash - 1;
+  try {
+    const v = localStorage.getItem(SYNCKEY);
+    if (v) { const n = parseInt(v.split('|')[0], 10); if (!isNaN(n) && n >= 0 && n < total) { idx = n; lastStamp = v; } }
+  } catch (e) {}
+
+  if (PRESENTER) {
+    document.body.classList.add('presenter');
+    document.title = 'Presenter view · DAIS deck';
+    buildPresenter();
+  }
+
+  render();
+
+  if (!PRESENTER) {
+    syncOut();                         // seed shared state for any presenter window
+    helpEl.classList.add('show');
+    setTimeout(() => helpEl.classList.remove('show'), 3500);
+  }
+})();
+</script>
+
+</body>
+</html>
