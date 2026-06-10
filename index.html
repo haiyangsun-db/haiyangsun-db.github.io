@@ -513,6 +513,44 @@
     border-radius: 12px; padding: 16px 24px; }
   .pv-notes .cue { color: var(--c-accent); }
   .pv-hint { color: var(--c-muted); font-size: 13px; }
+  .pv-exit { display: none; }
+
+  /* ---------- Mobile / touch ---------- */
+  #touchnav { display: none; }
+  #m-mode { display: none; }
+  @media (hover: none) and (pointer: coarse), (max-width: 820px) {
+    /* on-screen prev/next for touch (both normal & rehearse) */
+    #touchnav { display: flex; position: fixed; inset: auto 0 0 0; z-index: 10000;
+      justify-content: space-between; pointer-events: none; }
+    #touchnav button { pointer-events: auto; margin: 0 14px 16px; width: 56px; height: 56px;
+      border-radius: 999px; border: 1px solid var(--c-line); background: rgba(15,30,42,0.82);
+      color: var(--c-text); font-size: 30px; line-height: 54px; padding: 0; cursor: pointer;
+      -webkit-tap-highlight-color: transparent; }
+    /* rehearse-mode toggle (normal mode only) */
+    #m-mode { display: block; position: fixed; top: 10px; right: 10px; z-index: 10001;
+      background: var(--c-accent); color: #fff; border: none; border-radius: 8px;
+      padding: 9px 13px; font: 700 14px Arial, sans-serif; cursor: pointer; }
+    body.presenter #m-mode { display: none; }     /* in rehearse, use the Slides button instead */
+    #help { display: none !important; }            /* keyboard hints are useless on touch */
+  }
+
+  /* ---------- Rehearse (presenter) view, stacked for phones ---------- */
+  @media (max-width: 860px) {
+    html, body.presenter { overflow-x: hidden; }
+    body.presenter { overflow-y: auto; }
+    body.presenter #presenter-root { overflow-x: hidden; }
+    body.presenter .pv-body, body.presenter .pv-left, body.presenter .pv-right,
+    body.presenter .pv-stage { max-width: 100%; }
+    body.presenter .pv-top { flex-wrap: wrap; gap: 8px 14px; padding: 10px 16px; }
+    body.presenter .pv-hint, body.presenter .pv-clock { display: none; }
+    body.presenter .pv-timer { font-size: 22px; }
+    body.presenter .pv-exit { display: inline-block; }
+    body.presenter .pv-body { flex-direction: column; overflow-y: auto;
+      -webkit-overflow-scrolling: touch; padding: 12px 14px 90px; gap: 10px; }
+    body.presenter .pv-left, body.presenter .pv-right { flex: none; width: 100%; min-width: 0; }
+    body.presenter .pv-next-wrap { display: none; }   /* drop the next-slide preview on phones */
+    body.presenter .pv-notes { flex: 0 0 auto; overflow: visible; font-size: 20px; line-height: 1.5; }
+  }
 </style>
 </head>
 <body>
@@ -1238,6 +1276,13 @@ Thank you very much. Tian and I would be very happy to take your questions.">
 
 <div id="notes"></div>
 
+<!-- Touch controls (mobile / rehearsal) -->
+<div id="touchnav">
+  <button id="tn-prev" aria-label="Previous slide">&lsaquo;</button>
+  <button id="tn-next" aria-label="Next slide">&rsaquo;</button>
+</div>
+<button id="m-mode" aria-label="Toggle rehearse mode">Notes &rsaquo;</button>
+
 <!-- Presenter view (rendered only in the window opened with ?presenter=1) -->
 <div id="presenter-root">
   <div class="pv-top">
@@ -1246,6 +1291,7 @@ Thank you very much. Tian and I would be very happy to take your questions.">
     <span class="pv-clock" id="pv-clock"></span>
     <span class="pv-hint">← / → to navigate · advances the main window too</span>
     <span class="pv-count" id="pv-count">1 / 1</span>
+    <button class="pv-btn pv-exit" id="pv-exit">◂ Slides</button>
   </div>
   <div class="pv-body">
     <div class="pv-left">
@@ -1253,8 +1299,10 @@ Thank you very much. Tian and I would be very happy to take your questions.">
       <div class="pv-stage"><div class="pv-scaler" id="pv-cur"></div></div>
     </div>
     <div class="pv-right">
-      <div class="pv-label" id="pv-next-label">Next slide</div>
-      <div class="pv-stage"><div class="pv-scaler" id="pv-next"></div></div>
+      <div class="pv-next-wrap">
+        <div class="pv-label" id="pv-next-label">Next slide</div>
+        <div class="pv-stage"><div class="pv-scaler" id="pv-next"></div></div>
+      </div>
       <div class="pv-label">Speaker notes</div>
       <div class="pv-notes" id="pv-notes"></div>
     </div>
@@ -1271,7 +1319,7 @@ Thank you very much. Tian and I would be very happy to take your questions.">
   function fit() {
     const sw = 1600, sh = 900;
     const vw = window.innerWidth, vh = window.innerHeight;
-    const pad = 24;
+    const pad = vw < 760 ? 8 : 24;
     const scale = Math.min((vw - pad*2) / sw, (vh - pad*2) / sh);
     deck.style.transform = `scale(${scale})`;
   }
@@ -1384,6 +1432,8 @@ Thank you very much. Tian and I would be very happy to take your questions.">
     const esc = raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     document.getElementById('pv-notes').innerHTML = esc.replace(/\[([^\]]+)\]/g, '<span class="cue">[$1]</span>');
     document.getElementById('pv-count').textContent = isBackup(slides[idx]) ? 'Backup' : ((idx + 1) + ' / ' + MAIN_TOTAL);
+    // re-fit after layout settles (mobile widths measure late)
+    requestAnimationFrame(function () { fitScaler(cur); fitScaler(nxt); });
   }
   function buildPresenter() {
     pvStart = Date.now();
@@ -1393,9 +1443,16 @@ Thank you very much. Tian and I would be very happy to take your questions.">
       cEl.textContent = new Date().toLocaleTimeString();
     }, 500);
     document.getElementById('pv-reset').addEventListener('click', function () { pvStart = Date.now(); });
-    window.addEventListener('resize', function () {
-      fitScaler(document.getElementById('pv-cur')); fitScaler(document.getElementById('pv-next'));
-    });
+    function refit() { fitScaler(document.getElementById('pv-cur')); fitScaler(document.getElementById('pv-next')); }
+    window.addEventListener('resize', refit);
+    window.addEventListener('orientationchange', function () { setTimeout(refit, 120); });
+    window.addEventListener('load', refit);
+    setTimeout(refit, 60); setTimeout(refit, 300);   // catch late mobile layout
+    // robust: re-fit whenever a stage actually changes size (handles late mobile layout)
+    if (window.ResizeObserver) {
+      const ro = new ResizeObserver(refit);
+      document.querySelectorAll('#presenter-root .pv-stage').forEach(function (s) { ro.observe(s); });
+    }
   }
 
   document.addEventListener('keydown', e => {
@@ -1456,6 +1513,24 @@ Thank you very much. Tian and I would be very happy to take your questions.">
     helpEl.classList.add('show');
     setTimeout(() => helpEl.classList.remove('show'), 3500);
   }
+
+  // ---------- touch: swipe + on-screen buttons + rehearse toggle (mobile) ----------
+  let _sx = 0, _sy = 0, _st = 0;
+  document.addEventListener('touchstart', e => {
+    const t = e.changedTouches[0]; _sx = t.clientX; _sy = t.clientY; _st = Date.now();
+  }, { passive: true });
+  document.addEventListener('touchend', e => {
+    const t = e.changedTouches[0], dx = t.clientX - _sx, dy = t.clientY - _sy;
+    if (Date.now() - _st < 800 && Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      if (dx < 0) next(); else prev();   // horizontal swipe; vertical scroll is left alone
+    }
+  }, { passive: true });
+  const _base = location.href.split('#')[0].split('?')[0];
+  const _on = (id, fn) => { const b = document.getElementById(id); if (b) b.addEventListener('click', e => { e.stopPropagation(); fn(); }); };
+  _on('tn-prev', prev);
+  _on('tn-next', next);
+  _on('m-mode', () => { location.href = _base + '?presenter=1#' + (idx + 1); });  // enter rehearse
+  _on('pv-exit', () => { location.href = _base + '#' + (idx + 1); });             // back to slides
 })();
 </script>
 
