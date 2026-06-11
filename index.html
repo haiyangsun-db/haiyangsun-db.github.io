@@ -1185,19 +1185,22 @@ And if you use PySpark today, nothing changes for you: your existing UDFs keep w
         <div class="card">
           <span class="chip accent">Contribution / discussion &mdash; open-source Spark community</span>
           <ul style="font-size:18px;margin-top:14px;column-count:2;column-gap:48px;">
+            <li class="muted">Allison Wang</li>
+            <li class="muted">Chak Jesdabodi</li>
+            <li class="muted">Elliott Brossard</li>
+            <li class="muted">Felix Cheung</li>
+            <li class="muted">Finn Sch&ouml;llkopf</li>
             <li class="muted">Holden Karau</li>
             <li class="muted">Hyukjin Kwon</li>
-            <li class="muted">Wenchen Fan</li>
-            <li class="muted">Yicong Huang</li>
-            <li class="muted">Xianzhe Ma</li>
+            <li class="muted">Liang Chi Hsieh</li>
             <li class="muted">Lionel Montrieux</li>
             <li class="muted">Martin Grund</li>
-            <li class="muted">Sven Wagner-Boysen</li>
             <li class="muted">Sebastian Hillig</li>
-            <li class="muted">Elliott Brossard</li>
-            <li class="muted">Liang Chi Hsieh</li>
-            <li class="muted">Felix Cheung</li>
+            <li class="muted">Sven Wagner-Boysen</li>
             <li class="muted">Varun Srinivas</li>
+            <li class="muted">Wenchen Fan</li>
+            <li class="muted">Xianzhe Ma</li>
+            <li class="muted">Yicong Huang</li>
             <li class="dim">&hellip; and more</li>
           </ul>
         </div>
@@ -1306,6 +1309,7 @@ Thank you very much. Tian and I would be very happy to take your questions.">
 <!-- Touch controls (mobile / rehearsal) -->
 <div id="touchnav">
   <button id="tn-prev" aria-label="Previous slide">&lsaquo;</button>
+  <button id="tn-first" aria-label="First slide" title="First slide">&#8676;</button>
   <button id="tn-next" aria-label="Next slide">&rsaquo;</button>
 </div>
 <button id="m-mode" aria-label="Toggle rehearse mode">Notes &rsaquo;</button>
@@ -1556,6 +1560,7 @@ Thank you very much. Tian and I would be very happy to take your questions.">
   const _on = (id, fn) => { const b = document.getElementById(id); if (b) b.addEventListener('click', e => { e.stopPropagation(); fn(); }); };
   _on('tn-prev', prev);
   _on('tn-next', next);
+  _on('tn-first', () => go(0));
   _on('m-mode', () => { location.href = _base + '?presenter=1#' + (idx + 1); });  // enter rehearse
   _on('pv-exit', () => { location.href = _base + '#' + (idx + 1); });             // back to slides
 })();
