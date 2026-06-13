@@ -1,10 +1,10 @@
 <!doctype html>
-<!-- DAIS 2026 · SPARK-55278 · jun-11 · 19-slide deck (+1 backup) · auto-exported to deck-jun-11.pdf -->
+<!-- DAIS 2026 · SPARK-55278 · jun-13 · 19-slide deck (+1 backup) · auto-exported to deck-jun-13.pdf -->
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Language-agnostic UDF Protocol for Spark · DAIS 2026 · jun-11</title>
+<title>Language-agnostic UDF Protocol for Spark · DAIS 2026 · jun-13</title>
 <style>
   /* ============================================================
      Reset / typography
@@ -563,7 +563,10 @@
          ============================================================ -->
     <section class="slide title-slide active" data-notes="Good afternoon, everyone, and thank you for being here. My name is Haiyang. I'm a software engineer at Databricks, and I'm here with my colleague, Tian.
 
-Today, the two of us would like to share a proposal we're bringing to the Apache Spark open-source community — about how Spark runs user-defined functions across many different languages. Before I get into the proposal, let me be clear about what I mean when I say the word &quot;UDF&quot;.">
+Today, the two of us would like to share a proposal we're bringing to the Apache Spark open-source community — about how Spark runs user-defined functions across many different languages. Before I get into the proposal, let me be clear about what I mean when I say the word &quot;UDF&quot;." data-notes-short="• Welcome — Haiyang + Tian, Databricks
+• A proposal to the Apache Spark community
+• How Spark runs UDFs across many languages
+• First: what do we mean by &quot;UDF&quot;?">
       <div class="eyebrow">SPIP · SPARK-55278 · DAIS 2026</div>
       <h1 class="title">A Language‑agnostic UDF Protocol<br/>for Apache Spark</h1>
       <h3 class="subtitle">One execution model for user&#8209;defined functions &mdash; <span style="color:var(--c-accent);">across languages, runtimes, and environments</span>.</h3>
@@ -582,7 +585,14 @@ Today, the two of us would like to share a proposal we're bringing to the Apache
 
 <section class="slide" data-notes="When I say UDF, I don't only mean a simple function that you register with the udf keyword and then call by name in SQL. I mean any custom code you write that runs inside a Spark query. That covers a broad family — scalar functions, batched and per-partition functions, grouped and aggregate functions, table functions, and even some of the streaming APIs.
 
-UDFs matter because Spark's built-in functions can't cover everything. A UDF is how you call an external library, or run logic that's specific to your own business. They show up across a lot of real pipelines — ETL, machine learning, streaming — so for many teams they're an important part of how they use Spark. To finish setting up the problem, I need to introduce one more thing: Spark Connect.">
+A quick note on scope: inline Scala and Java UDFs run right in the JVM — that's the fast path, and it's out of scope; we're not changing it. This talk is about everything else — Python today, and the new languages — where the UDF runs outside the engine. I'll come back to the JVM at the end.
+
+UDFs matter because Spark's built-in functions can't cover everything. A UDF is how you call an external library, or run logic that's specific to your own business. They show up across a lot of real pipelines — ETL, machine learning, streaming — so for many teams they're an important part of how they use Spark. To finish setting up the problem, I need to introduce one more thing: Spark Connect." data-notes-short="• UDF = any custom code inside a Spark query (not just the udf keyword)
+• Family: scalar · mapPartitions · grouped/UDAF · UDTF · streaming
+• Why: built-ins can't cover everything — external libs, domain logic
+• SCOPE: inline Scala/Java = JVM, fast path, OUT of scope
+• This talk = Python + new languages
+• Next: Spark Connect">
       <div class="slide-header">
         <div class="eyebrow">Setting the stage</div>
         <div class="tag">1 of 3</div>
@@ -612,13 +622,19 @@ UDFs matter because Spark's built-in functions can't cover everything. A UDF is 
         </div>
       </div>
 
+      <p class="dim" style="margin-top:18px;font-size:15px;"><b style="color:var(--c-muted);">Scope:</b> inline Scala / Java UDFs run in the JVM &mdash; the fast path, out of scope. This talk: Python &amp; new languages. <span style="opacity:.8;">(More at the end.)</span></p>
+
       <div class="slide-footer"><span>What we mean by UDF</span><span>2 / 19</span></div>
       <div class="progress"><i></i></div>
     </section>
 
 <section class="slide" data-notes="Here's why Spark Connect matters for this talk: it opened Spark up to many more languages — but the one thing it still can't give them is UDFs. Let me explain briefly what it is, so that gap makes sense.
 
-Spark Connect, introduced in Spark 3.4, splits Spark into two parts: a client and a server. Your application becomes a thin client that talks to the server, sending it logical plans. Two things matter. First, it's forward-compatible: you can upgrade the server without upgrading every client. And second, it's universal: the client is thin and the protocol is language-neutral, so many languages can now reach Spark — Go, Rust, Swift, .NET, and others. They can do DataFrames and SQL. But UDFs are the one promise Spark Connect still can't keep for them.">
+Spark Connect, introduced in Spark 3.4, splits Spark into two parts: a client and a server. Your application becomes a thin client that talks to the server, sending it logical plans. Two things matter. First, it's forward-compatible: you can upgrade the server without upgrading every client. And second, it's universal: the client is thin and the protocol is language-neutral, so many languages can now reach Spark — Go, Rust, Swift, .NET, and others. They can do DataFrames and SQL. But UDFs are the one promise Spark Connect still can't keep for them." data-notes-short="• Spark Connect (3.4): client / server split
+• Thin client sends logical plans
+• Forward-compatible: upgrade server, not clients
+• Universal: many languages reach Spark — Go, Rust, Swift, .NET
+• They get DataFrames + SQL — but NOT UDFs">
       <div class="slide-header">
         <div class="eyebrow">Setting the stage</div>
         <div class="tag">2 of 3</div>
@@ -658,7 +674,11 @@ Spark Connect, introduced in Spark 3.4, splits Spark into two parts: a client an
 
 <section class="slide" data-notes="And that is the first problem. Right now, if you build a client on top of Spark Connect, there's no easy way to add UDF support for a new language. What you're looking at here is the README from the Apache Spark Connect client for Rust. DataFrames work. SQL works. But next to UDF and UDTF, it simply says: not possible.
 
-And it's not a Rust thing — none of the new Spark Connect languages have UDF support. It's structural: there's no language-neutral protocol for UDFs, and the planning is wired around Python. So each new language would have to rebuild the whole stack from scratch — everything PySpark has built up over the years.">
+And it's not a Rust thing — none of the new Spark Connect languages have UDF support. It's structural: there's no language-neutral protocol for UDFs, and the planning is wired around Python. So each new language would have to rebuild the whole stack from scratch — everything PySpark has built up over the years." data-notes-short="• Problem 1: new languages can't do UDFs
+• Rust README: UDF / UDTF = &quot;not possible&quot;
+• None of the new Connect languages have UDFs
+• Structural: no language-neutral protocol; planning wired to Python
+• Each language would rebuild PySpark's whole stack">
       <div class="slide-header">
         <div class="eyebrow">Problem 1</div>
         <div class="tag">Multi-language</div>
@@ -695,7 +715,11 @@ And it's not a Rust thing — none of the new Spark Connect languages have UDF s
 
 <section class="slide" data-notes="Here is the second problem. One of the benefits of Spark Connect is forward compatibility: an older client keeps working against a newer, evolving server, because the client only sends logical plans. But a UDF is more than a logical plan — it brings a whole environment with it: the language runtime, the library versions it needs, and the serialized function body itself, which assumes a specific runtime.
 
-So picture this: an older client defines a UDF, and it ends up running on a newer server whose bundled runtime has moved on. The logical plan still lines up — but the UDF's runtime doesn't, and the function can break. So for UDFs, that forward-compatibility promise is broken today.">
+So picture this: an older client defines a UDF, and it ends up running on a newer server whose bundled runtime has moved on. The logical plan still lines up — but the UDF's runtime doesn't, and the function can break. So for UDFs, that forward-compatibility promise is broken today." data-notes-short="• Problem 2: forward compatibility
+• Connect: old client works on a newer server (just logical plans)
+• But a UDF &gt; a plan: runtime + lib versions + serialized body
+• Old UDF on a newer server whose runtime moved → breaks
+• So for UDFs, forward-compat is broken today">
       <div class="slide-header">
         <div class="eyebrow">Problem 2</div>
         <div class="tag">Forward compatibility</div>
@@ -733,7 +757,11 @@ So picture this: an older client defines a UDF, and it ends up running on a newe
 
 <section class="slide" data-notes="And here is the third problem — this one has been around since long before Spark Connect. Today, UDF execution is tied to the executor's resources — and even when the code runs in a separate worker process next to the executor, that worker still shares the same node, the same scheduling model, and the same cluster hardware. If you've run UDFs at scale, you've almost certainly seen one run out of memory and take the whole query down with it.
 
-When the UDF is small, sharing those resources is fine. But the moment you need to load a large model, or you need special hardware — a GPU, say — that the cluster doesn't have, you're stuck. These are all resource constraints baked into the way UDFs execute in Spark today.">
+When the UDF is small, sharing those resources is fine. But the moment you need to load a large model, or you need special hardware — a GPU, say — that the cluster doesn't have, you're stuck. These are all resource constraints baked into the way UDFs execute in Spark today." data-notes-short="• Problem 3: resources (predates Connect)
+• UDF tied to executor resources — a side worker still shares node/scheduler/hardware
+• At scale: an OOM takes the query down
+• Big model, or a GPU the cluster lacks → stuck
+• Resource limits baked into how UDFs run">
       <div class="slide-header">
         <div class="eyebrow">Problem 3</div>
         <div class="tag">Resources</div>
@@ -764,7 +792,10 @@ When the UDF is small, sharing those resources is fine. But the moment you need 
       <div class="progress"><i></i></div>
     </section>
 
-<section class="slide" data-notes="Now, before I get to the proposal, I want to give real credit to how well PySpark already supports UDFs today. It's powerful, it's efficient, and it has been carefully tuned in production over many years. In fact, PySpark already solves a great deal of what I've just described. For a Python UDF, Spark starts a separate Python worker process next to each executor — so your code doesn't run inside Spark itself, it runs in that worker. They talk over a socket, moving data back and forth as Arrow, or pickle for some types. And it works: it covers essentially every UDF type, in production, at very large scale.">
+<section class="slide" data-notes="Now, before I get to the proposal, I want to give real credit to how well PySpark already supports UDFs today. It's powerful, it's efficient, and it has been carefully tuned in production over many years. In fact, PySpark already solves a great deal of what I've just described. For a Python UDF, Spark starts a separate Python worker process next to each executor — so your code doesn't run inside Spark itself, it runs in that worker. They talk over a socket, moving data back and forth as Arrow, or pickle for some types. And it works: it covers essentially every UDF type, in production, at very large scale." data-notes-short="• Credit: PySpark UDFs today — powerful, tuned, production
+• Python UDF: a separate worker next to each executor
+• Talk over a socket; data as Arrow (or pickle)
+• Covers every UDF type, at scale">
       <div class="slide-header"><div class="eyebrow">Reference point</div></div>
       <h2 class="title">How PySpark runs UDFs today</h2>
 
@@ -796,7 +827,11 @@ When the UDF is small, sharing those resources is fine. But the moment you need 
 
 First, the UDF planning is Python-specific — the engine's rules only understand Python, and there's nothing for Go or Rust or Swift to reuse. Second, the protocol between Spark and the worker is hand-written and position-based — it isn't well structured, so it's hard to version, and hard for another language to reuse. And third, the language-specific pieces — how the worker is launched, how its runtime is managed — are wired into the engine core itself. The cleaner design is to decouple the core engine from those language details, so that adding a language doesn't require changing the engine.
 
-So our goal is simple: keep everything PySpark gets right, and generalize exactly those three things.">
+So our goal is simple: keep everything PySpark gets right, and generalize exactly those three things." data-notes-short="• But 3 things don't generalize:
+• 1) planning is Python-specific
+• 2) protocol hand-written, position-based — hard to version/reuse
+• 3) language pieces wired into the engine core
+• Goal: keep what's right, generalize these three">
       <div class="slide-header"><div class="eyebrow">Reference point</div></div>
       <h2 class="title">&hellip; and why it can&rsquo;t scale as‑is</h2>
 
@@ -826,7 +861,11 @@ So our goal is simple: keep everything PySpark gets right, and generalize exactl
       <div class="progress"><i></i></div>
     </section>
 
-<section class="slide" data-notes="Here's the high-level shape of the proposal — three pillars. The first is language-agnostic planning: Spark plans a UDF by its execution shape, not its language. The second is a structured, versioned protocol between Spark and the worker. And the third is a declarative worker specification that hides the language-specific details. The guiding idea: be language-agnostic everywhere we can be, and language-specific only where we must be.">
+<section class="slide" data-notes="Here's the high-level shape of the proposal — three pillars. The first is language-agnostic planning: Spark plans a UDF by its execution shape, not its language. The second is a structured, versioned protocol between Spark and the worker. And the third is a declarative worker specification that hides the language-specific details. The guiding idea: be language-agnostic everywhere we can be, and language-specific only where we must be." data-notes-short="• Proposal = three pillars
+• 1) language-agnostic planning (by shape)
+• 2) structured, versioned protocol
+• 3) declarative worker spec
+• Principle: language-agnostic where we can, specific where we must">
       <div class="slide-header"><div class="eyebrow">Proposal</div></div>
       <h2 class="title">Three pillars</h2>
       <h3 class="subtitle">Language‑agnostic <span class="dim">where it can be</span>. Language‑specific <span class="dim">only where it must be</span>.</h3>
@@ -858,7 +897,11 @@ So our goal is simple: keep everything PySpark gets right, and generalize exactl
       <div class="progress"><i></i></div>
     </section>
 
-<section class="slide" data-notes="Let's take them one at a time. Pillar one is to plan a UDF by its shape. The key idea: for query planning, Spark doesn't care what language a UDF is written in — it cares about how the UDF's input and output fit into the rest of the query. A scalar UDF takes one row and returns one, and can be used as an expression anywhere in the query. A mapPartitions function processes a whole partition at a time. A grouped function runs after a grouping, one key-group at a time. A table function takes one row and returns many. And an aggregator reduces, then merges. Those shapes are exactly what Spark needs to plan and partition the work — and none of them depend on the language. PySpark already plans this way; we're simply making it general.">
+<section class="slide" data-notes="Let's take them one at a time. Pillar one is to plan a UDF by its shape. The key idea: for query planning, Spark doesn't care what language a UDF is written in — it cares about how the UDF's input and output fit into the rest of the query. A scalar UDF takes one row and returns one, and can be used as an expression anywhere in the query. A mapPartitions function processes a whole partition at a time. A grouped function runs after a grouping, one key-group at a time. A table function takes one row and returns many. And an aggregator reduces, then merges. Those shapes are exactly what Spark needs to plan and partition the work — and none of them depend on the language. PySpark already plans this way; we're simply making it general." data-notes-short="• Pillar 1: plan by shape
+• Planning cares about input/output shape, not language
+• scalar · mapPartitions · grouped · table · aggregator
+• Shapes drive planning + partitioning — none language-specific
+• PySpark already does this — make it general">
       <div class="slide-header"><div class="eyebrow">Pillar 1</div><div class="tag">Language-agnostic planning</div></div>
       <h2 class="title">Plan by <span class="accent">shape</span>, not by language</h2>
 
@@ -890,7 +933,12 @@ So our goal is simple: keep everything PySpark gets right, and generalize exactl
 
 <section class="slide" data-notes="Pillar two is the protocol itself — how Spark and the worker actually communicate. At a high level, every UDF execution, whatever its type, follows the same three phases. In Init, we open the connection and send the function and the schemas. In Data, we stream input batches in and stream results back. And in Finish, we flush the results and clean up. A few of the more complex types just run that round-trip more than once — an aggregator, for instance, does a reduce pass and then a merge pass.
 
-That lifecycle runs over a transport. Today it's a raw socket — position-based bytes, with the contract hidden in worker.py, and it's brittle. So we structure the messages with Protobuf — schema-defined and versioned — and carry them over gRPC, which gives us streaming, back-pressure, and language-neutrality out of the box. And it's the same lifecycle on both: the socket stays for PySpark, gRPC is added alongside.">
+That lifecycle runs over a transport. Today it's a raw socket — position-based bytes, with the contract hidden in worker.py, and it's brittle. So we structure the messages with Protobuf — schema-defined and versioned — and carry them over gRPC, which gives us streaming, back-pressure, and language-neutrality out of the box. And it's the same lifecycle on both: the socket stays for PySpark, gRPC is added alongside." data-notes-short="• Pillar 2: the protocol (how Spark ↔ worker talk)
+• 3 phases: Init → Data → Finish
+• Complex types repeat the round-trip (aggregator: reduce, then merge)
+• Runs over a transport — today a raw socket (brittle, hidden in worker.py)
+• Propose Protobuf (schema + versioned) over gRPC (streaming, back-pressure, language-neutral)
+• Same lifecycle on both — socket stays, gRPC added">
       <div class="slide-header"><div class="eyebrow">Pillar 2</div><div class="tag">Execution protocol</div></div>
       <h2 class="title">One protocol &mdash; <span class="accent">Init → Data → Finish</span>, over any transport</h2>
 
@@ -941,7 +989,10 @@ That lifecycle runs over a transport. Today it's a raw socket — position-based
 
 <section class="slide" data-notes="Pillar three is the worker spec — a declarative contract. Spark doesn't need to know how a worker is built; only how to start it, how to connect, and what to expect. That's what lets the language runtimes leave the engine: they live in the worker environment — a local install, a container image, or a remote service — and Spark plans from the capabilities the spec declares.
 
-It also helps with forward compatibility. In Spark Connect the client owns the spec, and it doesn't have to evolve with the engine — so the runtime stays on its own track, and an older client's UDF keeps working against a newer server.">
+It also helps with forward compatibility. In Spark Connect the client owns the spec, and it doesn't have to evolve with the engine — so the runtime stays on its own track, and an older client's UDF keeps working against a newer server." data-notes-short="• Pillar 3: worker spec — a declarative contract
+• Spark only needs: how to start, how to connect, what to expect
+• Runtimes leave the engine → live in the worker env (local/container/remote)
+• Helps forward-compat: client owns the spec, on its own track">
       <div class="slide-header"><div class="eyebrow">Pillar 3</div><div class="tag">Worker spec</div></div>
       <h2 class="title">The worker specification &mdash; a declarative contract</h2>
       <h3 class="subtitle">Spark <span class="accent">orchestrates</span>. Languages bring their own runtime.</h3>
@@ -974,7 +1025,11 @@ It also helps with forward compatibility. In Spark Connect the client owns the s
 
 <section class="slide" data-notes="And because the contract is declarative, the very same protocol supports workers that run in completely different ways. It can be a local process next to the executor — which is exactly what PySpark is today. It can be a container, when you want stronger isolation. Or it can be a remote worker running entirely outside the cluster — on dedicated hardware, on a GPU, or even on a service like AWS Lambda.
 
-To make it concrete: say a UDF needs a large, GPU-backed model. Today that forces the entire cluster to be big-instance and GPU-enabled — for every query, not just this one. With this, that UDF runs in a worker that has the right hardware, over the same protocol. Where the worker runs stops being Spark's problem — and that's the resource problem from earlier, solved.">
+To make it concrete: say a UDF needs a large, GPU-backed model. Today that forces the entire cluster to be big-instance and GPU-enabled — for every query, not just this one. With this, that UDF runs in a worker that has the right hardware, over the same protocol. Where the worker runs stops being Spark's problem — and that's the resource problem from earlier, solved." data-notes-short="• Same contract, very different workers
+• Local process (= PySpark today) · container · remote (GPU, AWS Lambda)
+• Concrete: a large GPU model — today forces the whole cluster big + GPU, every query
+• Here it runs in the right worker, same protocol
+• Where it runs stops being Spark's problem → resource problem solved">
       <div class="slide-header"><div class="eyebrow">Pillar 3</div><div class="tag">Beyond local</div></div>
       <h2 class="title">Same contract &mdash; local, container, or remote</h2>
 
@@ -1015,7 +1070,12 @@ To make it concrete: say a UDF needs a large, GPU-backed model. Today that force
       <div class="progress"><i></i></div>
     </section>
 
-<section class="slide" data-notes="Now, a practical point about building this. Beyond enabling new languages, we also want PySpark itself to move onto this protocol eventually — so every language runs on one common path. But we can't break the millions of existing PySpark jobs, so rule number one is: don't change today's behavior. Writing a whole new gRPC worker would leave us with two implementations to maintain that slowly drift apart. So instead, we keep one worker and split it in two: the UDF processing logic — deserialize, run, serialize — stays exactly as it is, and the transport becomes a separate, swappable piece. An adapter sits in between and picks the transport: the socket stays the default, and gRPC is opt-in until it's fully validated.">
+<section class="slide" data-notes="Now, a practical point about building this. Beyond enabling new languages, we also want PySpark itself to move onto this protocol eventually — so every language runs on one common path. But we can't break the millions of existing PySpark jobs, so rule number one is: don't change today's behavior. Writing a whole new gRPC worker would leave us with two implementations to maintain that slowly drift apart. So instead, we keep one worker and split it in two: the UDF processing logic — deserialize, run, serialize — stays exactly as it is, and the transport becomes a separate, swappable piece. An adapter sits in between and picks the transport: the socket stays the default, and gRPC is opt-in until it's fully validated." data-notes-short="• Practical: building it
+• Also migrate PySpark onto the protocol eventually — one common path
+• Can't break existing jobs — rule #1: don't change behavior
+• Not a whole new worker (two impls drift)
+• Split worker.py: processing logic (unchanged) + swappable transport
+• Adapter picks transport — socket default, gRPC opt-in">
       <div class="slide-header"><div class="eyebrow">PySpark UDFs</div><div class="tag">Existing language</div></div>
       <h2 class="title">Don&rsquo;t replace the PySpark worker &mdash; <span class="accent">split the seam</span></h2>
       <h3 class="subtitle">Rule #1 for PySpark: don&rsquo;t change existing behavior. So separate <em>transport</em> from <em>UDF logic</em>, and make transport pluggable.</h3>
@@ -1064,9 +1124,13 @@ To make it concrete: say a UDF needs a large, GPU-backed model. Today that force
       <div class="progress"><i></i></div>
     </section>
 
-<section class="slide" data-notes="You might be wondering about Scala and Java UDFs. Those run right inside the executor's JVM, in-process — there's no inter-process communication and no serialization hop, so it's the fastest path, and we deliberately don't touch it; inline JVM UDFs are out of scope.
+<section class="slide" data-notes="Coming back to JVM UDFs, as I flagged earlier: inline Scala and Java run right inside the executor's JVM, in-process — the fastest path, and out of scope.
 
-But here's where the same protocol shines even on the JVM. Sometimes a JVM UDF needs an isolated classpath, or it pulls in dependencies that clash with Spark's own, or it wants a different JVM version. Inside the shared executor, that's painful. With this protocol, you can run that JVM UDF as a separate worker — fully isolated — over the very same contract. So the JVM isn't left out: isolation just becomes an option, on demand.">
+But here's where the same protocol shines even on the JVM. Sometimes a JVM UDF needs an isolated classpath, or it pulls in dependencies that clash with Spark's own, or it wants a different JVM version. Inside the shared executor, that's painful. With this protocol, you can run that JVM UDF as a separate worker — fully isolated — over the very same contract. So the JVM isn't left out: isolation just becomes an option, on demand." data-notes-short="• Back to JVM UDFs (flagged on slide 2)
+• Inline Scala/Java = in the JVM, fastest path, out of scope
+• BUT the protocol helps the JVM too: isolation
+• Isolated classpath · conflicting deps · different JVM version
+• Run a JVM UDF as a separate worker — isolation on demand">
       <div class="slide-header"><div class="eyebrow">JVM UDFs</div><div class="tag">Existing language</div></div>
       <h2 class="title">What about JVM UDFs?</h2>
       <h3 class="subtitle">Inline stays in-process. Isolation becomes an option.</h3>
@@ -1099,7 +1163,11 @@ But here's where the same protocol shines even on the JVM. Sometimes a JVM UDF n
 
 <section class="slide" data-notes="And we've already started building this. The SPIP passed its community vote, and the first pieces are landing in Apache Spark. The protocol and core abstractions have landed; the gRPC backend, and the integration with Spark Classic and Connect, are in progress.
 
-Next up: a first PySpark eval type end-to-end on the new protocol, then more types, then the first language beyond Python.">
+Next up: a first PySpark eval type end-to-end on the new protocol, then more types, then the first language beyond Python." data-notes-short="• We've started building
+• SPIP vote passed
+• Protocol + core abstractions landed
+• gRPC backend + Classic/Connect integration in progress
+• Next: first PySpark eval type e2e → more types → first non-Python language">
       <div class="slide-header"><div class="eyebrow">Status</div><div class="tag">In the open</div></div>
       <h2 class="title">Status &mdash; landing in Apache Spark</h2>
 
@@ -1134,7 +1202,12 @@ Next up: a first PySpark eval type end-to-end on the new protocol, then more typ
 
 <section class="slide" data-notes="So what does this unlock? It comes straight back to the three problems we opened with. First, any language — not just Python — can support UDFs, by implementing one shared protocol. Second, fewer upgrade surprises, because a UDF's runtime is no longer tied to the Spark version. And third, heavy or GPU UDFs can run wherever they fit, instead of being trapped in the cluster. And as a bonus, the engine itself gets lighter.
 
-And if you use PySpark today, nothing changes for you: your existing UDFs keep working, and these new options are opt-in.">
+And if you use PySpark today, nothing changes for you: your existing UDFs keep working, and these new options are opt-in." data-notes-short="• What it unlocks — maps to the 3 problems
+• 1) any language — implement once
+• 2) fewer upgrade surprises (runtime off Spark's version)
+• 3) heavy/GPU UDFs run anywhere
+• Bonus: lighter engine
+• PySpark users: nothing changes — opt-in">
       <div class="slide-header"><div class="eyebrow">Why it matters</div></div>
       <h2 class="title">What this unlocks</h2>
 
@@ -1160,7 +1233,9 @@ And if you use PySpark today, nothing changes for you: your existing UDFs keep w
       <div class="progress"><i></i></div>
     </section>
 
-<section class="slide" data-notes="I want to end by saying that this is genuinely community work — my co-authors and shepherds, and the many contributors and reviewers across the open-source Spark community, from a number of different companies, all on the slide here. To me, this is open source at its very best.">
+<section class="slide" data-notes="I want to end by saying that this is genuinely community work — my co-authors and shepherds, and the many contributors and reviewers across the open-source Spark community, from a number of different companies, all on the slide here. To me, this is open source at its very best." data-notes-short="• Community work
+• Co-authors, shepherds, many contributors (on the slide)
+• Open source at its best">
       <div class="slide-header"><div class="eyebrow">Acknowledgments</div><div class="tag">Thank you</div></div>
       <h2 class="title">This is community work</h2>
       <h3 class="subtitle">Thanks to everyone shaping the design and the first lines of code.</h3>
@@ -1193,6 +1268,7 @@ And if you use PySpark today, nothing changes for you: your existing UDFs keep w
             <li class="muted">Martin Grund</li>
             <li class="muted">Sebastian Hillig</li>
             <li class="muted">Sven Wagner-Boysen</li>
+            <li class="muted">Titos Sareidakis</li>
             <li class="muted">Varun Srinivas</li>
             <li class="muted">Wenchen Fan</li>
             <li class="muted">Xianzhe Ma</li>
@@ -1208,7 +1284,10 @@ And if you use PySpark today, nothing changes for you: your existing UDFs keep w
 
 <section class="slide closing-slide" data-notes="So, to wrap up: this is a proposal for a language-agnostic way to run UDFs in Spark, and the first pieces are already landing in the codebase. The design is open, and it is still early — which means your feedback genuinely matters. The proposal is JIRA ticket SPARK-55278, and the code lives in Apache Spark, under udf/worker.
 
-Thank you very much. Tian and I would be very happy to take your questions.">
+Thank you very much. Tian and I would be very happy to take your questions." data-notes-short="• Wrap: a language-agnostic way to run UDFs; first pieces landing
+• Design is open &amp; early — your feedback matters
+• SPARK-55278 · code in apache/spark under udf/worker
+• Thank you — questions?">
       <div class="eyebrow">DAIS 2026 · SPARK-55278</div>
       <h2 class="title">Thank you.</h2>
       <h3 class="subtitle" style="font-size:32px;">Questions &mdash; feedback &mdash; and which language do <em>you</em> want UDFs in?</h3>
@@ -1233,7 +1312,9 @@ Thank you very much. Tian and I would be very happy to take your questions.">
       <div class="progress"><i></i></div>
     </section>
 
-<section class="slide" data-notes="This is an illustrative sketch of what the protocol could look like. There is a single, bidirectional Execute stream that carries both control messages and data messages. I want to stress that this is not final — it is here to show that the shape is feasible, and that it simply formalizes what PySpark is already doing today.">
+<section class="slide" data-notes="This is an illustrative sketch of what the protocol could look like. There is a single, bidirectional Execute stream that carries both control messages and data messages. I want to stress that this is not final — it is here to show that the shape is feasible, and that it simply formalizes what PySpark is already doing today." data-notes-short="• Illustrative proto sketch
+• One bidirectional Execute stream — control + data messages
+• Not final — shows the shape is feasible; formalizes what PySpark does">
       <div class="slide-header"><div class="eyebrow">BACKUP · Pillar 2</div><div class="tag">Illustrative</div></div>
       <h2 class="title">Illustrative protocol</h2>
 
@@ -1290,6 +1371,220 @@ Thank you very much. Tian and I would be very happy to take your questions.">
       <div class="progress"><i></i></div>
     </section>
 
+<section class="slide" data-notes="This is the message lifecycle for a single UDF execution — a small state machine. The happy path is three messages: Init opens the execution and carries the worker spec and the UDF itself; then any number of Data messages stream batches in and results back out; and finally Finish closes the execution cleanly and the worker can be reused. Two things can interrupt that path. A Cancel — say the query was killed upstream — tears the execution down cleanly and releases the worker back to the pool. And an Error, if the UDF throws or the worker dies, surfaces the failure and terminates that worker rather than reusing it. The key point is that both the normal and the abnormal exits are explicit states, so there's never a half-open execution left hanging." data-notes-short="• Single-execution state machine
+• Happy path: Init → Data* → Finish
+• Init carries worker spec + the UDF
+• Cancel → clean teardown, worker reused
+• Error → surface failure, terminate worker
+• No half-open executions">
+      <div class="slide-header">
+        <div class="eyebrow">BACKUP</div>
+        <div class="tag">For Q&amp;A</div>
+      </div>
+      <h2 class="title">Message lifecycle: the state machine</h2>
+      <h3 class="subtitle">One UDF execution = one stream. <span class="accent">Init &rarr; Data &rarr; Finish</span>, with explicit Cancel / Error exits.</h3>
+
+      <div style="margin-top:6px;display:flex;justify-content:center;">
+      <svg viewBox="0 0 1200 540" style="width:100%;max-width:1180px;height:auto;font-family:Arial,Helvetica,sans-serif;">
+        <defs>
+          <marker id="ah"  markerWidth="10" markerHeight="10" refX="7.5" refY="3.2" orient="auto"><path d="M0,0 L8,3.2 L0,6.4 Z" fill="#9eb3c4"/></marker>
+          <marker id="ahG" markerWidth="10" markerHeight="10" refX="7.5" refY="3.2" orient="auto"><path d="M0,0 L8,3.2 L0,6.4 Z" fill="#4ad295"/></marker>
+          <marker id="ahA" markerWidth="10" markerHeight="10" refX="7.5" refY="3.2" orient="auto"><path d="M0,0 L8,3.2 L0,6.4 Z" fill="#ffbd4a"/></marker>
+          <marker id="ahR" markerWidth="10" markerHeight="10" refX="7.5" refY="3.2" orient="auto"><path d="M0,0 L8,3.2 L0,6.4 Z" fill="#ff7461"/></marker>
+        </defs>
+
+        <!-- ===== group backdrops ===== -->
+        <!-- happy path band -->
+        <rect x="92" y="2" width="320" height="536" rx="16" fill="rgba(74,210,149,0.05)" stroke="rgba(74,210,149,0.18)" stroke-width="1"/>
+        <text x="252" y="26" text-anchor="middle" fill="#4ad295" font-size="14" font-weight="700" letter-spacing="0.08em">HAPPY PATH</text>
+        <!-- abnormal-exit band -->
+        <rect x="560" y="2" width="548" height="536" rx="16" fill="rgba(255,189,74,0.045)" stroke="rgba(255,189,74,0.16)" stroke-width="1"/>
+        <text x="834" y="26" text-anchor="middle" fill="#ffbd4a" font-size="14" font-weight="700" letter-spacing="0.08em">ABNORMAL EXITS &#183; from any non-terminal state</text>
+
+        <!-- ===== happy-path spine edges ===== -->
+        <g stroke="#9eb3c4" stroke-width="2.2" fill="none" marker-end="url(#ah)">
+          <line x1="252" y1="98"  x2="252" y2="134"/>
+          <line x1="252" y1="186" x2="252" y2="222"/>
+          <line x1="252" y1="274" x2="252" y2="310"/>
+          <line x1="252" y1="362" x2="252" y2="398"/>
+        </g>
+        <!-- final clean edge into Finished -->
+        <line x1="252" y1="450" x2="252" y2="486" stroke="#4ad295" stroke-width="2.6" fill="none" marker-end="url(#ahG)"/>
+        <g fill="#9eb3c4" font-size="14.5" text-anchor="middle">
+          <text x="252" y="120">init()</text>
+          <text x="252" y="208">InitResponse &#10003;</text>
+          <text x="252" y="296">process()</text>
+          <text x="252" y="384">Finish &#183; input exhausted</text>
+        </g>
+        <text x="252" y="472" text-anchor="middle" fill="#4ad295" font-size="14.5">FinishResponse</text>
+
+        <!-- ===== happy-path state boxes ===== -->
+        <!-- Created -->
+        <rect x="132" y="46" width="240" height="52" rx="11" fill="#15293a" stroke="#22384c" stroke-width="1.5"/>
+        <text x="252" y="70" text-anchor="middle" fill="#f4f6f8" font-size="19" font-weight="700">Created</text>
+        <text x="252" y="88" text-anchor="middle" fill="#8ba1b5" font-size="12">stream opened</text>
+        <!-- Initializing -->
+        <rect x="132" y="134" width="240" height="52" rx="11" fill="#15293a" stroke="#4ea1ff" stroke-width="1.6"/>
+        <text x="252" y="158" text-anchor="middle" fill="#f4f6f8" font-size="19" font-weight="700">Initializing</text>
+        <text x="252" y="176" text-anchor="middle" fill="#8ba1b5" font-size="12">Init &#183; worker spec + UDF</text>
+        <!-- Initialized -->
+        <rect x="132" y="222" width="240" height="52" rx="11" fill="#15293a" stroke="#22384c" stroke-width="1.5"/>
+        <text x="252" y="253" text-anchor="middle" fill="#f4f6f8" font-size="19" font-weight="700">Initialized</text>
+        <!-- Streaming -->
+        <rect x="132" y="310" width="240" height="52" rx="11" fill="#15293a" stroke="#4ad295" stroke-width="2"/>
+        <text x="252" y="334" text-anchor="middle" fill="#f4f6f8" font-size="19" font-weight="700">Streaming</text>
+        <text x="252" y="352" text-anchor="middle" fill="#8ba1b5" font-size="12">data plane</text>
+        <!-- Finishing -->
+        <rect x="132" y="398" width="240" height="52" rx="11" fill="#15293a" stroke="#22384c" stroke-width="1.5"/>
+        <text x="252" y="429" text-anchor="middle" fill="#f4f6f8" font-size="19" font-weight="700">Finishing</text>
+        <!-- Finished (clean terminal) -->
+        <rect x="132" y="486" width="240" height="52" rx="11" fill="rgba(74,210,149,0.12)" stroke="#4ad295" stroke-width="2.4"/>
+        <text x="252" y="510" text-anchor="middle" fill="#4ad295" font-size="19" font-weight="700">Finished</text>
+        <text x="252" y="528" text-anchor="middle" fill="#9eb3c4" font-size="12">clean &#183; worker reused</text>
+
+        <!-- data-plane badge (lower gutter between the two bands) -->
+        <g>
+          <rect x="406" y="470" width="146" height="50" rx="9" fill="#11212e" stroke="#22384c" stroke-width="1.2"/>
+          <text x="479" y="491" text-anchor="middle" fill="#9eb3c4" font-size="12.5">DataRequest* &#8644; DataResponse*</text>
+          <text x="479" y="508" text-anchor="middle" fill="#8ba1b5" font-size="11.5">independent &#183; 0+ each way</text>
+        </g>
+        <line x1="372" y1="336" x2="406" y2="470" stroke="#22384c" stroke-width="1.2" fill="none"/>
+
+        <!-- ===== abnormal-exit collector: non-terminal states -> Cancelling ===== -->
+        <g stroke="#ffbd4a" stroke-width="2" fill="none" stroke-dasharray="6 5">
+          <line x1="372" y1="160" x2="592" y2="160"/>
+          <line x1="372" y1="248" x2="592" y2="248"/>
+          <line x1="372" y1="336" x2="592" y2="336"/>
+          <line x1="372" y1="424" x2="592" y2="424"/>
+          <line x1="592" y1="160" x2="592" y2="424"/>
+        </g>
+        <line x1="592" y1="292" x2="676" y2="292" stroke="#ffbd4a" stroke-width="2.4" fill="none" marker-end="url(#ahA)"/>
+
+        <!-- Cancelling -->
+        <rect x="676" y="266" width="216" height="52" rx="11" fill="#15293a" stroke="#ffbd4a" stroke-width="2"/>
+        <text x="784" y="291" text-anchor="middle" fill="#f4f6f8" font-size="19" font-weight="700">Cancelling</text>
+        <text x="784" y="309" text-anchor="middle" fill="#ffbd4a" font-size="11.5">Cancel &#183; ErrorResponse &#183; close()</text>
+
+        <!-- Cancelling -> Cancelled (clean) -->
+        <line x1="784" y1="318" x2="784" y2="486" stroke="#4ad295" stroke-width="2.6" fill="none" marker-end="url(#ahG)"/>
+        <text x="796" y="406" fill="#4ad295" font-size="14.5">CancelResponse</text>
+        <!-- Cancelling -> failure terminals (error) -->
+        <line x1="892" y1="292" x2="956" y2="292" stroke="#ff7461" stroke-width="2.4" fill="none" marker-end="url(#ahR)" stroke-dasharray="6 5"/>
+        <text x="900" y="282" fill="#ff7461" font-size="13" font-weight="700">error</text>
+
+        <!-- Cancelled (clean terminal) -->
+        <rect x="676" y="486" width="216" height="52" rx="11" fill="rgba(74,210,149,0.12)" stroke="#4ad295" stroke-width="2.4"/>
+        <text x="784" y="510" text-anchor="middle" fill="#4ad295" font-size="19" font-weight="700">Cancelled</text>
+        <text x="784" y="528" text-anchor="middle" fill="#9eb3c4" font-size="12">clean &#183; worker reused</text>
+
+        <!-- Failure terminals card -->
+        <rect x="956" y="246" width="148" height="92" rx="12" fill="rgba(255,116,97,0.10)" stroke="#ff7461" stroke-width="2.2"/>
+        <text x="1030" y="272" text-anchor="middle" fill="#ff7461" font-size="16" font-weight="700">Failed</text>
+        <text x="1030" y="289" text-anchor="middle" fill="#ff7461" font-size="16" font-weight="700">TransportFailed</text>
+        <line x1="996" y1="300" x2="1064" y2="300" stroke="rgba(255,116,97,0.4)" stroke-width="1"/>
+        <text x="1030" y="320" text-anchor="middle" fill="#9eb3c4" font-size="12">worker NOT reused</text>
+        <text x="1030" y="334" text-anchor="middle" fill="#8ba1b5" font-size="11">ExecutionError / transport</text>
+      </svg>
+      </div>
+      <p class="dim" style="margin-top:8px;font-size:14px;text-align:center;">Engine drives <span class="mono">init()</span> / <span class="mono">process()</span>; the worker drives the protocol edges. One <span class="mono">SessionState</span> &mdash; every execution settles in exactly one terminal, never half-open. <span class="mono">apache/spark &middot; udf/worker</span></p>
+
+      <div class="slide-footer"><span>Backup · state machine</span><span>Backup</span></div>
+      <div class="progress"><i></i></div>
+    </section>
+
+<section class="slide" data-notes="These are the three worker-side abstractions that have already merged into open-source Spark. First, the Worker: that's the actual process that runs the UDF, and it's provisioned from a worker spec — the spec describes the language, runtime, and resources the worker needs. Second, the Dispatcher: it manages workers across their whole lifecycle — prepare, start, reuse, and shutdown — so it's also where pooling lives. And third, the Session: that's the client interface Spark uses to talk to one or more workers. Callers go through the Session and never have to reason about how a worker was started, reused, or torn down — the lifecycle is hidden behind it. You can see all three in the tree under udf/worker." data-notes-short="• Three abstractions merged to OSS Spark
+• Worker = the process that runs the UDF; from worker spec
+• Dispatcher = manages workers: prepare / start / reuse / shutdown (pooling)
+• Session = client interface Spark uses to talk to worker(s)
+• Callers use Session; lifecycle stays hidden
+• Code: apache/spark · udf/worker">
+      <div class="slide-header">
+        <div class="eyebrow">BACKUP</div>
+        <div class="tag">For Q&amp;A</div>
+      </div>
+      <h2 class="title">Key worker-side abstractions</h2>
+      <h3 class="subtitle">Three roles, already in open-source Spark: who runs the UDF, who manages workers, and how Spark talks to them.</h3>
+
+      <div style="margin-top:4px;display:flex;justify-content:center;">
+      <svg viewBox="0 0 1200 560" style="width:100%;max-width:1180px;height:auto;font-family:Arial,Helvetica,sans-serif;">
+        <defs>
+          <marker id="bh"  markerWidth="10" markerHeight="10" refX="7.5" refY="3.2" orient="auto"><path d="M0,0 L8,3.2 L0,6.4 Z" fill="#9eb3c4"/></marker>
+          <marker id="bhI" markerWidth="10" markerHeight="10" refX="7.5" refY="3.2" orient="auto"><path d="M0,0 L8,3.2 L0,6.4 Z" fill="#4ea1ff"/></marker>
+        </defs>
+
+        <!-- layer guide labels (left rail) -->
+        <text x="36" y="42"  fill="#6c8298" font-size="12" font-weight="700" letter-spacing="0.10em">ENGINE</text>
+        <text x="36" y="128" fill="#6c8298" font-size="12" font-weight="700" letter-spacing="0.10em">DISPATCHER</text>
+        <text x="36" y="246" fill="#6c8298" font-size="12" font-weight="700" letter-spacing="0.10em">SESSIONS</text>
+        <text x="36" y="406" fill="#6c8298" font-size="12" font-weight="700" letter-spacing="0.10em">WORKER</text>
+        <text x="36" y="421" fill="#6c8298" font-size="12" font-weight="700" letter-spacing="0.10em">POOL</text>
+
+        <!-- ===== Engine ===== -->
+        <rect x="460" y="14" width="280" height="50" rx="11" fill="#15293a" stroke="#22384c" stroke-width="1.6"/>
+        <text x="600" y="45" text-anchor="middle" fill="#f4f6f8" font-size="19" font-weight="700">Spark engine</text>
+        <!-- engine -> dispatcher -->
+        <line x1="600" y1="64" x2="600" y2="92" stroke="#9eb3c4" stroke-width="2.2" marker-end="url(#bh)"/>
+
+        <!-- ===== Dispatcher ===== -->
+        <rect x="190" y="92" width="820" height="72" rx="12" fill="#15293a" stroke="#ff7461" stroke-width="2"/>
+        <text x="600" y="125" text-anchor="middle" fill="#f4f6f8" font-size="20" font-weight="700">WorkerDispatcher</text>
+        <text x="600" y="150" text-anchor="middle" fill="#9eb3c4" font-size="13.5">one per UDFWorkerSpecification &#183; hides workers &#183; pools &amp; reuses</text>
+
+        <!-- createSession fan-out -->
+        <g stroke="#9eb3c4" stroke-width="2" fill="none" marker-end="url(#bh)">
+          <path d="M600,164 C600,196 240,184 240,214"/>
+          <line x1="600" y1="164" x2="600" y2="214"/>
+          <path d="M600,164 C600,196 960,184 960,214"/>
+        </g>
+        <rect x="494" y="176" width="212" height="24" rx="6" fill="#0d1a26" stroke="#22384c" stroke-width="1"/>
+        <text x="600" y="193" text-anchor="middle" fill="#9eb3c4" font-size="13">createSession(securityScope)</text>
+
+        <!-- ===== Sessions ===== -->
+        <rect x="120" y="214" width="240" height="52" rx="10" fill="#15293a" stroke="#4ea1ff" stroke-width="1.8"/>
+        <text x="240" y="245" text-anchor="middle" fill="#f4f6f8" font-size="17" font-weight="700">WorkerSession A</text>
+        <rect x="480" y="214" width="240" height="52" rx="10" fill="#15293a" stroke="#4ea1ff" stroke-width="1.8"/>
+        <text x="600" y="245" text-anchor="middle" fill="#f4f6f8" font-size="17" font-weight="700">WorkerSession B</text>
+        <rect x="840" y="214" width="240" height="52" rx="10" fill="#15293a" stroke="#4ea1ff" stroke-width="1.8"/>
+        <text x="960" y="245" text-anchor="middle" fill="#f4f6f8" font-size="17" font-weight="700">WorkerSession C</text>
+        <text x="600" y="294" text-anchor="middle" fill="#4ea1ff" font-size="13.5">Spark talks only to Sessions &#183; one per UDF execution &#183; each holds a WorkerHandle, not the worker</text>
+
+        <!-- ===== session -> worker mapping (A+B share Worker 1; C -> Worker 2) ===== -->
+        <g stroke="#4ea1ff" stroke-width="2.2" fill="none" marker-end="url(#bhI)">
+          <path d="M240,266 C240,318 320,316 330,372"/>
+          <path d="M600,266 C600,330 430,318 410,372"/>
+          <path d="M960,266 C960,318 880,316 870,372"/>
+        </g>
+
+        <!-- ===== Worker pool container ===== -->
+        <rect x="120" y="320" width="960" height="222" rx="14" fill="rgba(255,54,33,0.04)" stroke="#22384c" stroke-width="1.5" stroke-dasharray="7 6"/>
+        <text x="600" y="346" text-anchor="middle" fill="#9eb3c4" font-size="13.5" font-weight="700">Worker pool &#183; prepare &#8594; start &#8594; reuse &#8594; shutdown &#183; securityScope decides reuse</text>
+
+        <!-- Worker 1 (shared by A + B) -->
+        <rect x="200" y="372" width="320" height="120" rx="12" fill="rgba(255,54,33,0.08)" stroke="#ff3621" stroke-width="2"/>
+        <text x="360" y="408" text-anchor="middle" fill="#f4f6f8" font-size="20" font-weight="700">Worker 1</text>
+        <text x="360" y="432" text-anchor="middle" fill="#9eb3c4" font-size="13">runs the UDF &#183; from worker spec</text>
+        <text x="360" y="450" text-anchor="middle" fill="#8ba1b5" font-size="12">(language &#183; runtime &#183; resources)</text>
+        <rect x="248" y="462" width="224" height="22" rx="11" fill="rgba(78,161,255,0.14)" stroke="#4ea1ff" stroke-width="1.2"/>
+        <text x="360" y="478" text-anchor="middle" fill="#4ea1ff" font-size="12.5" font-weight="700">ref-counted &#183; serves A + B</text>
+
+        <!-- Worker 2 (serves C) -->
+        <rect x="680" y="372" width="320" height="120" rx="12" fill="rgba(255,54,33,0.08)" stroke="#ff3621" stroke-width="2"/>
+        <text x="840" y="408" text-anchor="middle" fill="#f4f6f8" font-size="20" font-weight="700">Worker 2</text>
+        <text x="840" y="432" text-anchor="middle" fill="#9eb3c4" font-size="13">runs the UDF &#183; from worker spec</text>
+        <text x="840" y="450" text-anchor="middle" fill="#8ba1b5" font-size="12">(language &#183; runtime &#183; resources)</text>
+        <rect x="728" y="462" width="224" height="22" rx="11" fill="rgba(78,161,255,0.14)" stroke="#4ea1ff" stroke-width="1.2"/>
+        <text x="840" y="478" text-anchor="middle" fill="#4ea1ff" font-size="12.5" font-weight="700">ref-counted &#183; serves C</text>
+
+        <!-- retirement note -->
+        <text x="600" y="522" text-anchor="middle" fill="#8ba1b5" font-size="13">Clean session &#8594; worker returns to the pool &#183; <tspan fill="#ff7461" font-weight="700">transport-failed worker is retired</tspan></text>
+      </svg>
+      </div>
+      <p class="dim" style="margin-top:8px;font-size:14px;text-align:center;">A worker <b>serves multiple sessions</b> (ref-counted); clean sessions return it to the pool, a transport-failed one is retired. <span class="mono">apache/spark &middot; udf/worker</span></p>
+
+      <div class="slide-footer"><span>Backup · abstractions</span><span>Backup</span></div>
+      <div class="progress"><i></i></div>
+    </section>
+
   </div>
 </div>
 
@@ -1297,7 +1592,7 @@ Thank you very much. Tian and I would be very happy to take your questions.">
   <div><b>Navigation</b></div>
   <div><span class="kbd">→</span> <span class="kbd">Space</span> next &nbsp; <span class="kbd">←</span> prev</div>
   <div><span class="kbd">Home</span> first &nbsp; <span class="kbd">End</span> last</div>
-  <div><span class="kbd">F</span> fullscreen &nbsp; <span class="kbd">N</span> notes &nbsp; <span class="kbd">P</span> presenter &nbsp; <span class="kbd">?</span> help</div>
+  <div><span class="kbd">F</span> fullscreen &nbsp; <span class="kbd">N</span> notes &nbsp; <span class="kbd">B</span> brief/full &nbsp; <span class="kbd">P</span> presenter &nbsp; <span class="kbd">?</span> help</div>
 </div>
 
 <div id="notes"></div>
@@ -1316,7 +1611,7 @@ Thank you very much. Tian and I would be very happy to take your questions.">
     <span class="pv-timer" id="pv-timer">00:00</span>
     <button class="pv-btn" id="pv-reset">Reset timer</button>
     <span class="pv-clock" id="pv-clock"></span>
-    <span class="pv-hint">← / → to navigate · advances the main window too</span>
+    <span class="pv-hint">← / → navigate · advances the main window · B = brief/full notes</span>
     <span class="pv-count" id="pv-count">1 / 1</span>
     <button class="pv-btn pv-exit" id="pv-exit">◂ Slides</button>
   </div>
@@ -1330,7 +1625,7 @@ Thank you very much. Tian and I would be very happy to take your questions.">
         <div class="pv-label" id="pv-next-label">Next slide</div>
         <div class="pv-stage"><div class="pv-scaler" id="pv-next"></div></div>
       </div>
-      <div class="pv-label">Speaker notes</div>
+      <div class="pv-label" id="pv-notes-label">Speaker notes</div>
       <div class="pv-notes" id="pv-notes"></div>
     </div>
   </div>
@@ -1342,6 +1637,11 @@ Thank you very much. Tian and I would be very happy to take your questions.">
   const slides = Array.from(deck.querySelectorAll('.slide'));
   const total = slides.length;
   let idx = 0;
+  let notesMode = 'full';   // 'full' = read-aloud script, 'short' = key phrases; toggled by B
+  function noteFor(slide) {
+    const s = slide.getAttribute('data-notes-short');
+    return (notesMode === 'short' && s) ? s : (slide.getAttribute('data-notes') || '');
+  }
 
   function fit() {
     const sw = 1600, sh = 900;
@@ -1376,13 +1676,13 @@ Thank you very much. Tian and I would be very happy to take your questions.">
     });
     // (footer page numbers are static in the markup: "N / 19" + "Backup")
     // notes — highlight [cue] markers in accent colour
-    const raw = slide.getAttribute('data-notes') || '';
+    const raw = noteFor(slide);
     const esc = raw
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
     const formatted = esc.replace(/\[([^\]]+)\]/g, '<span class="cue">[$1]</span>');
-    notesEl.innerHTML = '<b>Speaker notes &middot; ' + (idx+1) + ' / ' + total + '</b>\n\n' + formatted;
+    notesEl.innerHTML = '<b>Speaker notes' + (notesMode === 'short' ? ' &middot; brief' : '') + ' &middot; ' + (idx+1) + ' / ' + total + '</b>\n\n' + formatted;
     // url hash
     if (history.replaceState) history.replaceState(null, '', '#' + (idx + 1));
     // mirror to presenter window UI when this is the presenter view
@@ -1401,8 +1701,8 @@ Thank you very much. Tian and I would be very happy to take your questions.">
   const PRESENTER = /[?&]presenter\b/.test(location.search);
   const isBackup = s => { const e = s.querySelector('.slide-footer > span:last-child'); return !!e && /^backup$/i.test(e.textContent.trim()); };
   const MAIN_TOTAL = total - slides.filter(isBackup).length;
-  const SYNCKEY = 'dais-jun11-idx';
-  const bc = ('BroadcastChannel' in window) ? new BroadcastChannel('dais-jun11') : null;
+  const SYNCKEY = 'dais-jun13-idx';
+  const bc = ('BroadcastChannel' in window) ? new BroadcastChannel('dais-jun13') : null;
   let lastStamp = '';
   function syncOut() {
     const v = idx + '|' + Date.now();
@@ -1455,9 +1755,10 @@ Thank you very much. Tian and I would be very happy to take your questions.">
     if (idx + 1 < total) { nxt.innerHTML = ''; nxt.appendChild(cloneSlide(slides[idx + 1])); }
     else { nxt.innerHTML = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#5a6b76;font-size:40px;">End of deck</div>'; }
     fitScaler(nxt);
-    const raw = slides[idx].getAttribute('data-notes') || '';
+    const raw = noteFor(slides[idx]);
     const esc = raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     document.getElementById('pv-notes').innerHTML = esc.replace(/\[([^\]]+)\]/g, '<span class="cue">[$1]</span>');
+    var pnl = document.getElementById('pv-notes-label'); if (pnl) pnl.textContent = notesMode === 'short' ? 'Speaker notes · brief' : 'Speaker notes';
     document.getElementById('pv-count').textContent = isBackup(slides[idx]) ? 'Backup' : ((idx + 1) + ' / ' + MAIN_TOTAL);
     // re-fit after layout settles (mobile widths measure late)
     requestAnimationFrame(function () { fitScaler(cur); fitScaler(nxt); });
@@ -1500,6 +1801,8 @@ Thank you very much. Tian and I would be very happy to take your questions.">
         break;
       case 'n': case 'N':
         notesEl.classList.toggle('show'); break;
+      case 'b': case 'B':
+        notesMode = (notesMode === 'short') ? 'full' : 'short'; render(); break;
       case 'p': case 'P':
         if (!PRESENTER) openPresenter(); break;
       case '?':
