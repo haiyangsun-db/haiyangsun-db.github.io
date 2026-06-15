@@ -1,10 +1,10 @@
 <!doctype html>
-<!-- DAIS 2026 · SPARK-55278 · jun-14 · 19-slide deck (+4 backups) · auto-exported to deck-jun-14.pdf -->
+<!-- DAIS 2026 · SPARK-55278 · jun-15 · 19-slide deck (+4 backups) · auto-exported to deck-jun-15.pdf -->
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Language-agnostic UDF Protocol for Spark · DAIS 2026 · jun-14</title>
+<title>Language-agnostic UDF Protocol for Spark · DAIS 2026 · jun-15</title>
 <style>
   /* ============================================================
      Reset / typography
@@ -732,7 +732,7 @@ So keeping compatibility for a UDF across a server upgrade becomes much more cha
         <div class="eyebrow">Problem 2</div>
         <div class="tag">Forward compatibility</div>
       </div>
-      <h2 class="title">UDFs don&rsquo;t fit cleanly in a client–server world</h2>
+      <h2 class="title">A UDF is more than a logical plan</h2>
 
       <div class="grid cols-2">
         <div class="card">
@@ -804,8 +804,9 @@ On top of that, a UDF's capability is hard-limited to the resources of the execu
 • Python UDF: a separate worker next to each executor
 • Talk over a socket; data moves back and forth
 • Covers essentially every UDF type, at scale">
-      <div class="slide-header"><div class="eyebrow">Reference point</div></div>
-      <h2 class="title">How PySpark runs UDFs today</h2>
+      <div class="slide-header"><div class="eyebrow">Credit where it&rsquo;s due</div></div>
+      <h2 class="title">PySpark already runs UDFs <span class="accent">brilliantly</span></h2>
+      <h3 class="subtitle">Powerful, efficient, and battle&#8209;tested in production for years.</h3>
 
       <div class="grid cols-2">
         <div>
@@ -840,8 +841,8 @@ So our goal is to keep everything PySpark gets right, and generalize exactly the
 • 2) protocol hand-written, position-based — hard to version/reuse
 • 3) worker coupled to the engine → provisioning not reusable; ships with engine → forward-compat problem
 • Goal: keep what's right, generalize these">
-      <div class="slide-header"><div class="eyebrow">Reference point</div></div>
-      <h2 class="title">&hellip; and why it can&rsquo;t scale as‑is</h2>
+      <div class="slide-header"><div class="eyebrow">The catch</div></div>
+      <h2 class="title">&hellip; but it doesn&rsquo;t <span class="accent">generalize</span> to other languages</h2>
 
       <div class="grid cols-3">
         <div class="card">
@@ -981,29 +982,44 @@ Existing PySpark socket communication almost follows a similar pattern implicitl
           </div>
         </div>
 
-        <div class="lifecycle">
-          <div class="lc-head"><span>Spark</span><span class="w">Worker</span></div>
-
-          <div class="lc-phase">
-            <div class="lc-tag">Init</div>
-            <div class="lc-msg to-right"><span class="lc-text">UDF body &middot; input/output schema &middot; config</span></div>
-          </div>
-
-          <div class="lc-phase">
-            <div class="lc-tag">Data stream</div>
-            <div class="lc-msg to-right"><span class="lc-text">input batches &mdash; Arrow</span></div>
-            <div class="lc-msg to-left"><span class="lc-text">result batches</span></div>
-          </div>
-
-          <div class="lc-phase">
-            <div class="lc-tag">Finish</div>
-            <div class="lc-msg to-left"><span class="lc-text">flush remaining results &middot; done</span></div>
-            <div class="lc-note">connection closes &middot; worker released</div>
-          </div>
-
-          <div class="lc-phase">
-            <div class="lc-note" style="margin-top:0;">&#8635; Complex types repeat the round-trip &mdash; an aggregator does <b>reduce</b>, then <b>merge</b>.</div>
-          </div>
+        <div style="display:flex;align-items:center;justify-content:center;">
+        <svg viewBox="0 0 540 414" style="width:100%;max-width:560px;height:auto;font-family:Arial,Helvetica,sans-serif;">
+          <defs>
+            <marker id="lcR" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#ff3621"/></marker>
+            <marker id="lcL" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#4ea1ff"/></marker>
+          </defs>
+          <!-- phase bands -->
+          <rect x="14" y="68" width="512" height="56" rx="10" fill="rgba(255,54,33,0.05)" stroke="#22384c" stroke-width="1"/>
+          <rect x="14" y="134" width="512" height="118" rx="10" fill="rgba(255,255,255,0.025)" stroke="#22384c" stroke-width="1"/>
+          <rect x="14" y="262" width="512" height="56" rx="10" fill="rgba(78,161,255,0.06)" stroke="#22384c" stroke-width="1"/>
+          <!-- lifelines -->
+          <line x1="120" y1="58" x2="120" y2="330" stroke="#2d4356" stroke-width="1.5" stroke-dasharray="3 5"/>
+          <line x1="420" y1="58" x2="420" y2="330" stroke="#2d4356" stroke-width="1.5" stroke-dasharray="3 5"/>
+          <!-- heads -->
+          <rect x="58" y="14" width="124" height="40" rx="9" fill="#15293a" stroke="#ff3621" stroke-width="1.6"/>
+          <text x="120" y="39" text-anchor="middle" fill="#f4f6f8" font-size="17" font-weight="700">Spark</text>
+          <rect x="358" y="14" width="124" height="40" rx="9" fill="#15293a" stroke="#4ea1ff" stroke-width="1.6"/>
+          <text x="420" y="39" text-anchor="middle" fill="#f4f6f8" font-size="17" font-weight="700">Worker</text>
+          <!-- INIT -->
+          <text x="28" y="89" fill="#ff7461" font-size="12" font-weight="700" letter-spacing="0.12em">INIT</text>
+          <text x="270" y="103" text-anchor="middle" fill="#f4f6f8" font-size="13">UDF body &#183; input/output schema &#183; config</text>
+          <line x1="120" y1="115" x2="420" y2="115" stroke="#ff3621" stroke-width="2" marker-end="url(#lcR)"/>
+          <!-- DATA -->
+          <text x="28" y="155" fill="#9eb3c4" font-size="12" font-weight="700" letter-spacing="0.12em">DATA STREAM</text>
+          <text x="270" y="180" text-anchor="middle" fill="#f4f6f8" font-size="13">input batches &#183; Arrow</text>
+          <line x1="120" y1="192" x2="420" y2="192" stroke="#ff3621" stroke-width="2" marker-end="url(#lcR)"/>
+          <text x="270" y="220" text-anchor="middle" fill="#f4f6f8" font-size="13">result batches</text>
+          <line x1="420" y1="232" x2="120" y2="232" stroke="#4ea1ff" stroke-width="2" marker-end="url(#lcL)"/>
+          <text x="270" y="248" text-anchor="middle" fill="#8ba1b5" font-size="11.5">streamed continuously &#183; many batches, both directions</text>
+          <!-- FINISH -->
+          <text x="28" y="283" fill="#4ea1ff" font-size="12" font-weight="700" letter-spacing="0.12em">FINISH</text>
+          <text x="270" y="297" text-anchor="middle" fill="#f4f6f8" font-size="13">flush remaining results &#183; done</text>
+          <line x1="420" y1="309" x2="120" y2="309" stroke="#4ea1ff" stroke-width="2" marker-end="url(#lcL)"/>
+          <!-- notes -->
+          <text x="270" y="352" text-anchor="middle" fill="#8ba1b5" font-size="12">connection closes &#183; worker released to the pool</text>
+          <text x="270" y="384" text-anchor="middle" fill="#8ba1b5" font-size="12">&#8635; Complex types repeat the round-trip &#8212; an</text>
+          <text x="270" y="402" text-anchor="middle" fill="#8ba1b5" font-size="12">aggregator does <tspan fill="#f4f6f8" font-weight="700">reduce</tspan>, then <tspan fill="#f4f6f8" font-weight="700">merge</tspan>.</text>
+        </svg>
         </div>
       </div>
 
@@ -1796,8 +1812,8 @@ Thank you very much. Tian and I would be very happy to take your questions." dat
   const PRESENTER = /[?&]presenter\b/.test(location.search);
   const isBackup = s => { const e = s.querySelector('.slide-footer > span:last-child'); return !!e && /^backup$/i.test(e.textContent.trim()); };
   const MAIN_TOTAL = total - slides.filter(isBackup).length;
-  const SYNCKEY = 'dais-jun14-idx';
-  const bc = ('BroadcastChannel' in window) ? new BroadcastChannel('dais-jun14') : null;
+  const SYNCKEY = 'dais-jun15-idx';
+  const bc = ('BroadcastChannel' in window) ? new BroadcastChannel('dais-jun15') : null;
   let lastStamp = '';
   function syncOut() {
     const v = idx + '|' + Date.now();
