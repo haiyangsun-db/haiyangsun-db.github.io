@@ -624,7 +624,7 @@ Now, you may be wondering: why are we doing this now? To answer that, I need to 
         </div>
       </div>
 
-      <p class="dim" style="margin-top:18px;font-size:15px;"><b style="color:var(--c-muted);">Scope:</b> inline Scala / Java run <b>inside the executor JVM</b> &mdash; out of scope. This talk: UDFs that run <b>outside the JVM in a separate process</b> &mdash; a &ldquo;worker&rdquo; (Python today, and new languages) &mdash; which needs IPC with the engine.</p>
+      <p class="dim" style="margin-top:18px;font-size:15px;"><b style="color:var(--c-muted);">Scope:</b> inline Scala / Java (in-JVM) are out of scope. This talk: UDFs that run in a <b>separate worker process</b> &mdash; Python today, and new languages.</p>
 
       <div class="slide-footer"><span>What we mean by UDF</span><span>2 / 19</span></div>
       <div class="progress"><i></i></div>
@@ -654,8 +654,8 @@ However, despite all these benefits, there's an important piece missing from Spa
           </div>
           <ul style="margin-top:22px;">
             <li><b>Thin client</b> &mdash; just send logical plans <span class="dim">(defined in Protobuf)</span></li>
-            <li><b>Forward-compatible</b> &mdash; upgrade the server, leave clients untouched &rarr; apps stay <span class="accent">stable over time</span></li>
-            <li><b>Universal &amp; language-neutral</b> &mdash; reach Spark from any language by implementing the protocol</li>
+            <li><b>Forward-compatible</b> &mdash; upgrade the server, not the clients</li>
+            <li><b>Universal &amp; language-neutral</b> &mdash; reach Spark from any language</li>
           </ul>
           <p class="dim" style="margin-top:10px;font-size:15px;">Logical plan: what your query does, before Spark runs it. &nbsp;&middot;&nbsp; gRPC + Protobuf: a standard, versioned way for programs to exchange messages.</p>
         </div>
@@ -788,9 +788,8 @@ On top of that, a UDF's capability is hard-limited to the resources of the execu
         <div class="card">
           <h4>What that forces today</h4>
           <ul>
-            <li>Over-size the whole cluster for one heavy UDF</li>
-            <li>Or pull the data out and run the model elsewhere by hand</li>
-            <li>Or skip it &mdash; the workload just can&rsquo;t run in Spark</li>
+            <li>Over-size the whole cluster for one UDF</li>
+            <li>Or it just can&rsquo;t run in Spark</li>
           </ul>
           <p class="dim" style="margin-top:8px;font-size:16px;">The resource model is a <b>constraint</b>, not a choice.</p>
         </div>
@@ -847,7 +846,11 @@ So our goal is to keep everything PySpark gets right, and generalize exactly the
       <div class="grid cols-3">
         <div class="card">
           <h4>Planning is mature &mdash; but Python‑tied</h4>
-          <p class="muted">PySpark already plans UDFs to run outside the JVM, with chaining and query-optimization support &mdash; but most of that code is <b>closely tied to Python</b>, with nothing for Go / Rust / Swift to reuse.</p>
+          <ul>
+            <li>Plans UDFs to run <b>outside the JVM</b></li>
+            <li>Mature chaining + query optimization</li>
+            <li>But <b>closely tied to Python</b> &mdash; nothing for Go / Rust / Swift to reuse</li>
+          </ul>
         </div>
         <div class="card">
           <h4>Hand-written socket protocol</h4>
@@ -858,11 +861,18 @@ So our goal is to keep everything PySpark gets right, and generalize exactly the
 <span class="k">read_bytes</span>(infile)
 <span class="c"># position-oriented, brittle</span>
           </pre>
-          <p class="muted" style="margin-top:8px;">Hard to version, hard to evolve, hard to reuse.</p>
+          <ul style="margin-top:8px;">
+            <li>Position-oriented &amp; brittle</li>
+            <li>Hard to version, evolve, or reuse</li>
+          </ul>
         </div>
         <div class="card">
           <h4>Worker coupled to the engine</h4>
-          <p class="muted">Launching and managing the worker is wired into the core &mdash; so provisioning can&rsquo;t be reused by other languages. And because the worker <b>ships with the engine</b>, an old client&rsquo;s UDF can hit a newer worker &mdash; the forward-compat problem.</p>
+          <ul>
+            <li>Launch &amp; management wired into the core</li>
+            <li>Provisioning can&rsquo;t be reused by other languages</li>
+            <li>Worker <b>ships with the engine</b> &mdash; old client can hit a newer worker (forward-compat problem)</li>
+          </ul>
         </div>
       </div>
 
@@ -1042,20 +1052,19 @@ On top of that, the spec also lets Spark and the worker agree on some details. F
         <div class="card">
           <h4>What the spec declares</h4>
           <ul>
-            <li><b>How to start</b> the worker &mdash; a callable / launch script</li>
-            <li><b>How Spark connects</b> &mdash; UDS path, TCP port, gRPC endpoint</li>
-            <li><b>How to clean up</b> &mdash; verify, install, terminate</li>
-            <li><b>What to expect</b> &mdash; data formats, parallelism, reuse, chaining</li>
+            <li><b>Start</b> &mdash; launch script / callable</li>
+            <li><b>Connect</b> &mdash; UDS · TCP · gRPC endpoint</li>
+            <li><b>Clean up</b> &mdash; verify · install · terminate</li>
+            <li><b>Capabilities</b> &mdash; data format · parallelism · chaining</li>
           </ul>
         </div>
         <div class="card accent">
           <h4>What changes for Spark</h4>
           <ul>
-            <li>No language specifics <b>baked</b> into the engine</li>
-            <li>Runtimes &amp; deps live in the <b>worker environment</b> &mdash; local install, container image, or remote service &mdash; the spec describes how Spark reaches it</li>
-            <li><b>Engine decoupled from language details</b> &mdash; the client owns the spec, on its own version track, so an old client keeps working on a newer server <span class="dim">(part of what restores forward compatibility)</span></li>
-            <li>Spark routes planning &amp; scheduling off the spec&rsquo;s <b>capabilities</b></li>
-            <li>Pool workers by spec hash + security scope &mdash; safely reuse them</li>
+            <li>No language specifics in the engine</li>
+            <li>Runtimes &amp; deps live in the worker <span class="dim">(local · container · remote)</span></li>
+            <li>Client owns the spec &mdash; old client, newer server still works</li>
+            <li>Spark plans, schedules &amp; pools off its <b>capabilities</b></li>
           </ul>
         </div>
       </div>
@@ -1124,24 +1133,22 @@ And Spark still keeps control over the workers, based on the spec. For example, 
         <div class="card">
           <span class="chip info">You &mdash; the language author</span>
           <ul style="margin-top:14px;">
-            <li><b>1 &middot; Implement a gRPC worker</b> that follows the UDF protocol <span class="dim">(Pillar 2)</span></li>
-            <li><b>2 &middot; Describe provisioning</b> in a worker spec &mdash; how to start, connect, capabilities <span class="dim">(Pillar 3)</span></li>
-            <li><b>3 &middot; Send the spec</b> together with the query&rsquo;s logical plan</li>
+            <li><b>1 &middot; Implement a gRPC worker</b> for the protocol <span class="dim">(P2)</span></li>
+            <li><b>2 &middot; Describe provisioning</b> in a worker spec <span class="dim">(P3)</span></li>
+            <li><b>3 &middot; Send the spec</b> + the query&rsquo;s logical plan</li>
           </ul>
-          <p class="dim" style="margin-top:10px;font-size:16px;">One worker + one spec &mdash; per language, once.</p>
         </div>
         <div class="card accent">
           <span class="chip accent">Spark</span>
           <ul style="margin-top:14px;">
-            <li><b>Plans the UDF</b> from the logical plan &mdash; regardless of language <span class="dim">(Pillar 1)</span></li>
-            <li><b>Provisions &amp; orchestrates workers</b> per the spec <span class="dim">(Pillar 3)</span></li>
-            <li><b>Forwards UDF requests</b> &amp; exchanges input / output data <span class="dim">(Pillar 2)</span></li>
+            <li><b>Plans by shape</b> &mdash; any language <span class="dim">(P1)</span></li>
+            <li><b>Provisions &amp; orchestrates</b> workers per the spec <span class="dim">(P3)</span></li>
+            <li><b>Forwards requests</b> &amp; exchanges data <span class="dim">(P2)</span></li>
           </ul>
-          <p class="dim" style="margin-top:10px;font-size:16px;">The same path for every language.</p>
         </div>
       </div>
 
-      <p class="muted" style="margin-top:22px;">The language author writes <b class="accent">one gRPC worker and one spec</b>. Spark does planning, provisioning, and data exchange &mdash; identically for every language.</p>
+      <p class="muted" style="margin-top:22px;">One <b class="accent">gRPC worker + one spec</b> per language &mdash; Spark does the rest, the same way every time.</p>
 
       <div class="slide-footer"><span>How it works · end to end</span><span>14 / 19</span></div>
       <div class="progress"><i></i></div>
