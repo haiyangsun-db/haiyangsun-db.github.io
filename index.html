@@ -495,10 +495,10 @@
   .pv-count { margin-left: auto; font-size: 20px; color: var(--c-muted); font-variant-numeric: tabular-nums; }
   .pv-body { flex: 1 1 auto; display: flex; gap: 22px; padding: 20px 26px; min-height: 0; }
   /* left column: the current slide */
-  .pv-left { flex: 1.55 1 0; min-width: 0;
+  .pv-left { flex: 1.15 1 0; min-width: 0;
     display: flex; flex-direction: column; justify-content: flex-start; gap: 8px; min-height: 0; }
   /* right column: notes only (next-slide preview removed) — fills full height */
-  .pv-right { flex: 1.0 1 0; min-width: 340px;
+  .pv-right { flex: 1.35 1 0; min-width: 340px;
     display: flex; flex-direction: column; gap: 8px; min-height: 0; }
   .pv-label { font-size: 12px; letter-spacing: .12em; text-transform: uppercase;
     color: var(--c-muted); flex: 0 0 auto; margin-top: 4px; }
@@ -509,10 +509,12 @@
   .pv-next-wrap { display: none; }
   .pv-scaler { position: absolute; top: 0; left: 0; width: 1600px; height: 900px; transform-origin: top left; }
   .pv-scaler .slide { position: absolute; inset: 0; }
-  .pv-notes { flex: 1 1 auto; overflow-y: auto; white-space: pre-wrap;
-    font-size: 18px; line-height: 1.42; color: var(--c-text);
+  .pv-notes { flex: 1 1 auto; overflow-y: auto; white-space: normal;
+    font-size: 18px; line-height: 1.4; color: var(--c-text);
     background: rgba(15,30,42,0.7); border: 1px solid var(--c-line);
     border-radius: 12px; padding: 14px 22px; }
+  .pv-notes p { margin: 0 0 0.55em; }
+  .pv-notes p:last-child { margin-bottom: 0; }
   .pv-notes .cue { color: var(--c-accent); }
   .pv-hint { color: var(--c-muted); font-size: 13px; }
   .pv-exit { display: none; }
@@ -564,8 +566,11 @@
          1. TITLE
          ============================================================ -->
     <section class="slide title-slide active" data-notes="Good afternoon, everyone, and thank you for being here.
+
 My name is Haiyang. I’m a software engineer at Databricks, and I’m here today with my colleague, Tian.
+
 In this talk, we’ll present our ongoing work in Apache Spark to extend user-defined function support to more languages.
+
 Before we get into the architecture, let me start with the motivation." data-notes-short="• Welcome — Haiyang + Tian, Databricks
 • Ongoing work in Apache Spark: extend UDF support to more languages
 • Start with the motivation">
@@ -586,11 +591,17 @@ Before we get into the architecture, let me start with the motivation." data-not
     </section>
 
 <section class="slide" data-notes="When I say UDF in this talk, I don’t just mean a simple function that you register with the udf keyword and call by name in SQL.
+
 I mean custom user code that Spark executes as part of a query.
+
 That can include scalar functions, batched functions, grouped functions, aggregate functions, table functions, and some streaming APIs.
+
 UDFs are important because Spark’s built-in functions cannot cover every use case. Users often need to call external libraries, access external resources, run domain-specific logic, or process unstructured data.
+
 In this talk, we focus on UDFs that run outside the executor JVM, such as PySpark UDFs.
+
 These UDFs run in a separate worker process, so Spark needs to communicate with the worker through inter-process communication.
+
 That execution model is the focus of this talk." data-notes-short="• UDF = custom user code Spark runs in a query (not just the udf keyword)
 • Family: scalar · batched · grouped · aggregate · table · streaming
 • Why: built-ins can't cover everything — external libs, domain logic, unstructured data
@@ -624,19 +635,26 @@ That execution model is the focus of this talk." data-notes-short="• UDF = cus
         </div>
       </div>
 
-      <p class="dim" style="margin-top:18px;font-size:15px;"><b style="color:var(--c-muted);">Scope:</b> inline Scala / Java (in-JVM) are out of scope. This talk: UDFs that run in a <b>separate worker process</b> &mdash; Python today, and new languages.</p>
+      <p class="dim" style="margin-top:18px;font-size:15px;"><b style="color:var(--c-muted);">Scope:</b> existing inline JVM UDFs remain unchanged; the main focus is UDFs that run <b>outside the executor JVM</b>, in a separate worker process &mdash; Python today, and new languages.</p>
 
       <div class="slide-footer"><span>What we mean by UDF</span><span>2 / 19</span></div>
       <div class="progress"><i></i></div>
     </section>
 
 <section class="slide" data-notes="Why are we doing this now? Let me introduce the Spark Connect project.
+
 Spark Connect was a new architecture proposed in Spark 3.4.
+
 It separates the Spark client from the Spark server. The client sends logical plans to the server using a Protobuf-based protocol.
+
 This makes it much easier to build Spark clients in different languages.
+
 Today, there are already open-source Spark Connect clients for languages such as Go, Rust, Swift, and .NET.
+
 However, UDF support does not automatically come with Spark Connect.
+
 A client can build DataFrames and run SQL, but supporting UDFs requires more than sending a logical plan. It also requires a way to execute user code in that client’s language.
+
 That is the missing piece we want to address." data-notes-short="• Spark Connect: client/server split; client sends logical plans (Protobuf)
 • → easy to build clients in many languages (Go, Rust, Swift, .NET)
 • DataFrames ✓ SQL ✓ — but UDFs need more than a plan: run user code in that language
@@ -684,11 +702,17 @@ That is the missing piece we want to address." data-notes-short="• Spark Conne
     </section>
 
 <section class="slide" data-notes="The first problem is multi-language UDF support.
+
 Today, if you build a new client on top of Spark Connect, there is no easy way to add UDF support for that language.
+
 On the left side of the slide, we show the README from the GitHub repository for a Rust implementation of Spark Connect.
+
 DataFrames work. SQL works. But UDFs and UDTFs are explicitly marked as not possible.
+
 And this is not specific to Rust.
+
 The main exceptions today are JVM-based Scala and Java UDFs, and PySpark UDFs. But those implementations were built for their own languages and do not directly generalize to new Spark Connect clients.
+
 As a result, each new language would need to rebuild the whole UDF support from scratch as PySpark does today." data-notes-short="• Problem 1: multi-language UDF support
 • New client → no easy way to add UDFs (Rust README: udf/udtf = not possible)
 • Exceptions (JVM Scala/Java, PySpark) were built for their own language — don't generalize
@@ -721,10 +745,15 @@ As a result, each new language would need to rebuild the whole UDF support from 
     </section>
 
 <section class="slide" data-notes="The second problem is forward compatibility.
+
 Spark Connect is designed so that an older client can often keep working against a newer Spark server, because the logical plan is encoded in Protobuf and can evolve across versions.
+
 But a UDF is more than a logical plan.
+
 It also depends on the worker runtime, dependencies, serialization format, and the protocol between Spark and the worker.
+
 So when the Spark server is upgraded, it may still need to execute UDFs submitted by older clients, or even multiple client versions at the same time.
+
 Without a structured and versioned UDF protocol, that becomes difficult to support reliably." data-notes-short="• Problem 2: forward compatibility
 • Connect: old client ↔ newer server (logical plan in Protobuf evolves)
 • But a UDF &gt; a plan: worker runtime, deps, serialization, Spark↔worker protocol
@@ -766,11 +795,17 @@ Without a structured and versioned UDF protocol, that becomes difficult to suppo
     </section>
 
 <section class="slide" data-notes="The third problem is resource management.
+
 This one is not specific to Spark Connect. It is about how Spark has traditionally executed UDFs.
+
 Today, UDF workers usually run next to executors and share the same node resources.
+
 This can cause stability problems, because a heavy UDF can compete with Spark tasks for memory and CPU.
+
 It also limits UDF execution to the executor environment.
+
 If a UDF needs a large model, a GPU, stronger isolation, or a different runtime, scaling the whole Spark cluster around that one UDF is often not practical.
+
 So we need a model where UDF workers can be managed more flexibly, without hard-coding one execution environment into Spark." data-notes-short="• Problem 3: resource management (how Spark has always run UDFs)
 • Workers run next to executors, share node resources → stability issues (heavy UDF vs tasks)
 • Limited to the executor environment
@@ -806,11 +841,16 @@ So we need a model where UDF workers can be managed more flexibly, without hard-
     </section>
 
 <section class="slide" data-notes="Before describing the new architecture, it is useful to look at PySpark, because PySpark is the most complete UDF implementation Spark has today.
+
 PySpark UDFs support many eval types, cover a wide range of execution shapes, and have been optimized and hardened in production over many years.
+
 So PySpark gives us an important starting point.
-But PySpark was designed for one language, one worker implementation, and one primary execution model.
-So the question is not whether PySpark works well for Python. It does.
-The question is: what parts of PySpark can be generalized, and what new abstractions are needed to make UDF execution language-agnostic?" data-notes-short="• PySpark = the most complete UDF implementation today → our starting point
+
+But PySpark was designed for one language and one worker implementation.
+
+So the question is not whether PySpark works well for Python because it does.
+
+The question is: what parts of PySpark can be generalized, and what new abstractions are needed to make UDF execution more generic for more languages?" data-notes-short="• PySpark = the most complete UDF implementation today → our starting point
 • Many eval types, every shape, hardened in production for years
 • But designed for one language, one worker, one execution model
 • Question: what can we generalize, and what NEW abstraction is needed for language-agnostic UDFs?">
@@ -843,10 +883,15 @@ The question is: what parts of PySpark can be generalized, and what new abstract
     </section>
 
 <section class="slide" data-notes="There are three main limitations that prevent PySpark UDF support from becoming a general architecture for all languages.
+
 First, PySpark has planning and optimization support for executing UDFs outside the Spark JVM, but much of that logic is tied to Python-specific eval types and Python-specific execution paths.
+
 Second, PySpark has a protocol between Spark and the worker, but the protocol is hand-written and position-based. It works for PySpark, but it is difficult to version, difficult to evolve safely, and difficult for another language to implement correctly.
+
 Third, PySpark does not provide a general abstraction for worker provisioning. The Python worker is shipped with the Spark engine, started by Spark’s Python-specific worker management logic, and normally runs next to the executor.
-That model does not directly support a worker provided by a Spark Connect client, a worker with its own runtime version, a containerized worker, or a remote worker running on specialized hardware.
+
+That model does not directly support a worker provided by a Spark Connect client, and a worker with its own runtime environment.
+
 So while PySpark gives us valuable building blocks, it does not by itself solve the broader multi-language and multi-environment UDF problem." data-notes-short="• 3 limitations that block a general, all-language architecture:
 • 1) planning/optimization tied to Python-specific eval types &amp; paths
 • 2) protocol hand-written &amp; position-based — hard to version/evolve/reuse
@@ -893,13 +938,20 @@ So while PySpark gives us valuable building blocks, it does not by itself solve 
     </section>
 
 <section class="slide" data-notes="To solve this broader problem, we propose three pillars.
+
 The first pillar is language-agnostic planning. Here, we generalize the idea that Spark should plan a UDF based on its execution shape, not based on the language it is written in.
+
 The second pillar is a structured and versioned protocol between Spark and the worker. Here, we turn the implicit worker communication pattern into an explicit contract that can be implemented by different languages.
+
 The third pillar is the worker specification. This is the new architectural piece: a declarative contract that tells Spark how to obtain, start, connect to, validate, and manage a worker, without hard-coding those details into the Spark engine.
+
 So the first two pillars generalize and formalize ideas that already exist in PySpark.
+
 The third pillar introduces the missing abstraction that allows UDF workers to become language-independent, client-provided, and deployable in different environments.
+
 The guiding idea is simple:
-Be language-agnostic everywhere we can be, and language-specific only where we must be." data-notes-short="• 3 pillars
+
+Be language-agnostic whenever possible, and language-specific only when needed." data-notes-short="• 3 pillars
 • 1) language-agnostic planning — generalize &quot;plan by shape&quot;
 • 2) structured, versioned protocol — make the implicit worker comms an explicit contract
 • 3) worker specification — the NEW piece: declarative contract for obtaining/starting/managing workers
@@ -955,11 +1007,17 @@ Be language-agnostic everywhere we can be, and language-specific only where we m
     </section>
 
 <section class="slide" data-notes="Let’s take the three pillars one at a time.
+
 Pillar one is language-agnostic planning.
+
 For query planning, Spark does not really care whether a UDF is written in Python, Rust, Go, or another language.
+
 Spark cares about the execution shape of the UDF: how its input and output fit into the rest of the query.
+
 For example, is it a scalar function, a batched function, a grouped function, a table function, or a multi-stage aggregate function?
+
 Those shapes determine how Spark plans the query, partitions the data, and schedules the work.
+
 PySpark already has planning support built around these ideas. The goal here is to generalize that support so the same planning model can be reused across languages." data-notes-short="• Pillar 1: plan by execution shape, not language
 • Spark cares how input/output fit the query — Python/Rust/Go doesn't matter
 • scalar · batched · grouped · table · multi-stage aggregate
@@ -995,17 +1053,28 @@ PySpark already has planning support built around these ideas. The goal here is 
     </section>
 
 <section class="slide" data-notes="Pillar two is the protocol: how Spark and the worker communicate during UDF execution.
+
 At a high level, most UDF executions follow the same pattern.
-First, Spark initializes the worker with the function body and metadata.
+First, Spark initializes an udf execution with the function body and metadata.
 Then Spark streams input batches to the worker, and the worker streams result batches back.
 Finally, both sides finish and clean up the execution.
 More complex UDFs, such as aggregate UDFs, can repeat this pattern across multiple stages.
+
 PySpark already follows a similar pattern implicitly, but its protocol is hand-written and position-based.
 That makes it hard to version and hard for another language to implement correctly.
-So we propose to define the Spark-worker protocol using Protobuf.
+So we propose to define the Spark-worker protocol using Protobuf as in Spark connect.
 This makes the contract explicit, structured, versioned, and reusable across languages.
+
 It also separates the protocol from the transport.
-The transport could still be a socket, or it could use a mature IPC framework such as gRPC for streaming, back-pressure, authentication hooks, and broad language support." data-notes-short="• Pillar 2: the protocol (Spark ↔ worker)
+
+The protocol is the contract: it defines the messages and semantics between Spark and the worker. The transport is the mechanism used to exchange those messages.
+That means we are not tied to one transport implementation. A worker could still communicate over a raw socket, similar to PySpark today. But it could also expose the same protocol through a mature IPC framework such as gRPC.
+
+In particular, we can publish a gRPC-based worker service definition as part of the protocol. Then a new language does not need to invent its own communication layer or reverse-engineer Spark’s worker protocol. It can follow the published service definition, generate the gRPC stubs for that language, and implement the worker-side execution logic behind those APIs.
+This is important because raw socket allows full low-level control over the communication, but it also pushes a lot of framework work onto every worker implementation: streaming, back-pressure, authentication, error handling, debugging, and cross-language support.
+gRPC provides many of these pieces out of the box. It has native support for bidirectional streaming, built-in flow control, authentication middleware, and mature libraries for most major programming languages.
+
+So for a new language, implementing a UDF worker becomes much easier. The language author can rely on the published gRPC service definition for the transport interface, and focus on the UDF execution semantics rather than rebuilding the communication framework from scratch." data-notes-short="• Pillar 2: the protocol (Spark ↔ worker)
 • Init (send fn + metadata) → stream input/results → finish &amp; clean up
 • Complex UDFs (aggregate) repeat across stages
 • PySpark socket: hand-written, position-based → hard to version/reuse
@@ -1023,9 +1092,9 @@ The transport could still be a socket, or it could use a mature IPC framework su
             <li><b>Finish</b> &mdash; flush, release, terminate</li>
           </ul>
           <div class="card" style="margin-top:18px;">
-            <h4>Over any transport</h4>
-            <p class="muted" style="margin:0;"><b>Today:</b> a raw socket &mdash; implicit &amp; position-based, contract hidden in <span class="mono">worker.py</span> &mdash; version-fragile.<br/><b>New:</b> <span class="accent">Protobuf + gRPC</span> &mdash; explicit, reusable across languages.</p>
-            <p class="dim" style="margin:10px 0 0;font-size:15px;">Protobuf: schema + versioning (schema evolution). gRPC: streaming, back-pressure, failure recovery, debuggability, language-neutral.</p>
+            <h4>Protocol vs transport</h4>
+            <p class="muted" style="margin:0;"><b>Protocol</b> &mdash; Protobuf messages + semantics (the contract). <b>Transport</b> &mdash; a raw socket today, or gRPC.</p>
+            <p class="dim" style="margin:10px 0 0;font-size:15px;">Spark publishes a <span class="accent">gRPC service definition</span> &rarr; a new language generates stubs and writes the worker execution logic &mdash; not the communication layer (streaming &middot; back-pressure &middot; auth come free).</p>
           </div>
         </div>
 
@@ -1075,15 +1144,25 @@ The transport could still be a socket, or it could use a mature IPC framework su
     </section>
 
 <section class="slide" data-notes="Now let’s spend a bit more time on the third pillar, because this is the part that goes beyond generalizing PySpark.
+
 Planning tells Spark what kind of UDF execution is needed.
+
 The protocol tells Spark how to communicate with a worker once the worker exists.
+
 But neither of those answers a more fundamental question: where does the worker come from?
+
 That is the role of the worker specification.
+
 A worker spec is a declarative contract between the client and Spark. It describes how Spark can obtain the worker, how to start it, how to connect to it, what protocol it speaks, how to validate the environment, and how to clean it up.
+
 This is different from the PySpark model, where the Python worker is part of Spark itself and is managed through Python-specific logic.
+
 With a worker spec, the worker no longer has to be built into Spark.
+
 It can be provided by a Spark Connect client. It can carry its own runtime and dependencies. It can declare its capabilities. And Spark can manage it through a common interface.
+
 The spec can also describe capabilities such as whether the worker supports parallel requests, whether it supports UDF fusion or chaining, and what execution modes it can handle.
+
 So the worker specification is the key abstraction that separates the Spark engine from language-specific worker implementations." data-notes-short="• The part that goes BEYOND generalizing PySpark
 • Planning = what · protocol = how to talk · but neither says WHERE the worker comes from
 • Worker spec = declarative contract: obtain · start · connect · which protocol · validate · clean up
@@ -1092,7 +1171,7 @@ So the worker specification is the key abstraction that separates the Spark engi
 • The key abstraction separating the engine from language-specific workers">
       <div class="slide-header"><div class="eyebrow">Pillar 3</div><div class="tag">Worker spec</div></div>
       <h2 class="title">The worker specification &mdash; a declarative contract</h2>
-      <h3 class="subtitle">Planning says <b style="color:#4ea1ff;">what</b>. The protocol says <b style="color:#ff3621;">how</b>. The worker spec says <b style="color:#ffbd4a;">where the worker comes from</b>.</h3>
+      <h3 class="subtitle">Planning defines the <b style="color:#4ea1ff;">execution shape</b>. The protocol defines the <b style="color:#ff3621;">communication contract</b>. The worker spec defines the <b style="color:#ffbd4a;">provisioning contract</b>.</h3>
 
       <div class="grid cols-2">
         <div class="card">
@@ -1120,12 +1199,19 @@ So the worker specification is the key abstraction that separates the Spark engi
     </section>
 
 <section class="slide" data-notes="Once worker provisioning becomes declarative, the same UDF protocol can support very different deployment models.
+
 The worker can still be a local process next to the executor, similar to how PySpark works today.
+
 But it can also be a containerized worker, when stronger isolation or custom dependencies are needed.
+
 It can be a worker using a different runtime version than the Spark engine.
+
 It can also be a remote worker running outside the Spark cluster — for example, on dedicated hardware, on a GPU machine, or behind a managed service.
+
 This is why the worker spec is important.
+
 It turns worker provisioning from language-specific engine logic into a reusable Spark abstraction.
+
 That gives us a path toward UDF execution that is not only language-agnostic, but also more flexible in where and how the user code runs." data-notes-short="• Declarative provisioning → same protocol, very different deployment models
 • Local (like PySpark today) · container (isolation / deps) · different runtime version · remote (GPU, managed service)
 • The worker spec turns provisioning into a reusable Spark abstraction
@@ -1170,13 +1256,22 @@ That gives us a path toward UDF execution that is not only language-agnostic, bu
     </section>
 
 <section class="slide" data-notes="Now let’s look at how these three pillars come together end to end.
+
 Suppose you are building a Spark Connect client for a new language, and you want to add UDF support.
-With this architecture, you can do that in a few steps.
-First, you implement a worker that follows the UDF protocol.
-Second, you describe how to provision and connect to that worker using a worker spec.
-Third, you send that worker spec together with the logical plan for the query that contains the UDF.
-From there, Spark takes over.
-Spark knows how to plan the UDF execution from the logical plan. At execution time, Spark provisions and orchestrates workers according to the worker spec, and communicates with them through the shared protocol." data-notes-short="• How the 3 pillars come together, end to end
+
+With this architecture, you do not need to rebuild Spark’s UDF execution stack from scratch.
+
+Spark provides the common UDF protocol: the Protobuf messages, the execution semantics, and a gRPC-based worker service definition.
+
+As a language implementer, you can follow that published service definition, generate the gRPC server for your language, and implement the worker-side UDF execution logic behind those APIs.
+
+Then you provide a worker spec that tells Spark how to obtain, start, connect to, and clean up that worker.
+
+When the user submits a query with a UDF, the Spark Connect client sends the logical plan together with the worker spec.
+
+From there, Spark takes over. It plans the UDF by execution shape, provisions and orchestrates workers according to the worker spec, and communicates with them through the shared protocol.
+
+So adding UDF support for a new language becomes a matter of implementing the published worker contract, instead of adding another language-specific UDF path inside Spark." data-notes-short="• How the 3 pillars come together, end to end
 • New-language client: 1) implement a worker to the UDF protocol
 • 2) describe provisioning in a worker spec
 • 3) send the spec + the query's logical plan
@@ -1189,7 +1284,7 @@ Spark knows how to plan the UDF execution from the logical plan. At execution ti
         <div class="card">
           <span class="chip info">You &mdash; the language author</span>
           <ul style="margin-top:14px;">
-            <li><b>1 &middot; Implement a gRPC worker</b> for the protocol <span class="dim">(P2)</span></li>
+            <li><b>1 &middot; Implement the worker</b> &mdash; generate gRPC stubs from the published service definition; write only the UDF logic <span class="dim">(P2)</span></li>
             <li><b>2 &middot; Describe provisioning</b> in a worker spec <span class="dim">(P3)</span></li>
             <li><b>3 &middot; Send the spec</b> + the query&rsquo;s logical plan</li>
           </ul>
@@ -1204,17 +1299,22 @@ Spark knows how to plan the UDF execution from the logical plan. At execution ti
         </div>
       </div>
 
-      <p class="muted" style="margin-top:22px;">One <b class="accent">gRPC worker + one spec</b> per language &mdash; Spark does the rest, the same way every time.</p>
+      <p class="muted" style="margin-top:22px;">Implement the <b class="accent">published worker contract</b> + a spec &mdash; not another language-specific UDF path inside Spark.</p>
 
       <div class="slide-footer"><span>How it works · end to end</span><span>14 / 19</span></div>
       <div class="progress"><i></i></div>
     </section>
 
 <section class="slide" data-notes="Coming back to JVM UDFs, as I mentioned earlier, inline Scala and Java UDFs are mostly out of scope for the main part of this talk.
+
 They run directly inside the executor JVM, so they do not require extra IPC or extra serialization.
+
 However, inlining also means that these UDFs share the same classpath and the same privileges as the Spark executor. They are also limited by the resources of the executor node.
+
 In some cases, it would be useful to run JVM-based UDFs in a separate process.
+
 That could help avoid classpath conflicts, use a different JVM or Scala version, or provide stronger isolation.
+
 This is not supported today, but this work could make it possible in the future." data-notes-short="• Inline Scala/Java mostly out of scope — in-JVM, no extra IPC/serialization
 • But: shared classpath + privileges, limited to node resources
 • Sometimes useful to run a JVM UDF in a separate process: avoid classpath conflicts, different JVM/Scala, isolation
@@ -1250,10 +1350,15 @@ This is not supported today, but this work could make it possible in the future.
     </section>
 
 <section class="slide" data-notes="What about PySpark UDFs?
+
 The ultimate goal is to unify all UDF execution code paths, including PySpark.
+
 That said, as we move toward this unified architecture, we should not move PySpark onto the new protocol immediately.
+
 We will only switch PySpark over after fully validating both behavior and performance.
+
 To make the transition smoother, and to avoid reinventing the existing PySpark implementation, we are refactoring the PySpark worker to separate the transport layer from the execution logic.
+
 Instead of building a new worker from scratch, this allows us to reuse as much of the existing logic as possible and minimize behavior changes." data-notes-short="• Goal: unify all UDF code paths, including PySpark
 • Don't move PySpark over immediately — only after full behavior + performance validation
 • Refactor the PySpark worker: separate transport from execution logic
@@ -1307,12 +1412,18 @@ Instead of building a new worker from scratch, this allows us to reuse as much o
     </section>
 
 <section class="slide" data-notes="Where are we today?
+
 This project was proposed as a Spark Project Improvement Proposal, or SPIP, and has been accepted after passing the Spark community vote.
+
 We are now actively working on the implementation.
+
 Because this is a large project, we are shipping it incrementally.
+
 We are starting by defining the protocol and semantics of the UDF protocol.
+
 From there, we are using one PySpark eval type as the first end-to-end validation path, and then gradually expanding coverage to more eval types.
-In parallel, we also need to integrate the protocol with Spark Connect, and onboard at least one language beyond Python to show that the protocol is truly language-agnostic." data-notes-short="• Proposed as a SPIP — accepted, passed the community vote
+
+In parallel, we also need to integrate the protocol with Spark Connect, and onboard more languages beyond Python." data-notes-short="• Proposed as a SPIP — accepted, passed the community vote
 • Now implementing, incrementally
 • Define protocol + semantics → first PySpark eval type e2e → more eval types
 • In parallel: integrate with Spark Connect + onboard ≥1 non-Python language">
@@ -1348,7 +1459,7 @@ In parallel, we also need to integrate the protocol with Spark Connect, and onbo
       <div class="progress"><i></i></div>
     </section>
 
-<section class="slide" data-notes="I would like to thank the many people who contributed to the initial proposal, shared ideas in discussions, and helped with code reviews throughout the implementation." data-notes-short="• Thanks to everyone — initial proposal, discussions, code reviews
+<section class="slide" data-notes="Before ending the talk, I would like to thank the many people who contributed to the initial proposal, shared ideas in discussions, and helped with code reviews throughout the implementation." data-notes-short="• Thanks to everyone — initial proposal, discussions, code reviews
 • (contributors on the slide)">
       <div class="slide-header"><div class="eyebrow">Acknowledgments</div><div class="tag">Thank you</div></div>
       <h2 class="title">This is community work</h2>
@@ -1397,7 +1508,9 @@ In parallel, we also need to integrate the protocol with Spark Connect, and onbo
     </section>
 
 <section class="slide closing-slide" data-notes="The main takeaway is that by separating UDF planning, communication, and worker provisioning, we can make UDF execution in Spark reusable across languages, more resilient to version changes, and more flexible in where and how workers run.
+
 Thank you very much.
+
 I’m happy to take questions." data-notes-short="• Takeaway: separate planning, communication &amp; worker provisioning
 • → UDFs reusable across languages, version-resilient, flexible in where/how workers run
 • Thank you — questions?">
@@ -1938,8 +2051,8 @@ I’m happy to take questions." data-notes-short="• Takeaway: separate plannin
     else { nxt.innerHTML = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#5a6b76;font-size:40px;">End of deck</div>'; }
     fitScaler(nxt);
     const raw = noteFor(slides[idx]);
-    const esc = raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    document.getElementById('pv-notes').innerHTML = esc.replace(/\[([^\]]+)\]/g, '<span class="cue">[$1]</span>');
+    const esc = raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\[([^\]]+)\]/g, '<span class="cue">[$1]</span>');
+    document.getElementById('pv-notes').innerHTML = esc.split(/\n{2,}/).map(function(p){ return '<p>' + p.replace(/\n/g, '<br>') + '</p>'; }).join('');
     var pnl = document.getElementById('pv-notes-label'); if (pnl) pnl.textContent = notesMode === 'short' ? 'Speaker notes · brief' : 'Speaker notes';
     document.getElementById('pv-count').textContent = isBackup(slides[idx]) ? 'Backup' : ((idx + 1) + ' / ' + MAIN_TOTAL);
     // re-fit after layout settles (mobile widths measure late)
